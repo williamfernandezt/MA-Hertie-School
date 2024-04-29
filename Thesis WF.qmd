@@ -1,0 +1,3028 @@
+---
+title: |
+   | Does retirement make people happy?
+   | Evidence from old-age workers in Germany
+author: 
+    - name: "William Fernandez"
+date: today
+date-format: "MMMM YYYY"
+bibliography: export.bib
+number-sections: true
+fig-cap-location: top
+format: 
+  pdf:
+    toc: true
+    lof: true
+    lot: true
+    papersize: a4
+    documentclass: scrartcl
+    geometry:
+      - top=30mm
+      - bottom=35mm
+      - left=25.4mm
+      - right=25.4mm
+      - heightrounded
+    template-partials:
+    - before-body.tex
+---
+
+```{r, setup, include=F}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(dplyr)
+library(modelsummary)
+library(haven)
+library(zoo)
+library(kableExtra)
+library(estimatr)
+library(rdrobust)
+library(plm)
+library(fixest)
+library(gtsummary)
+library(gt)
+library(ggrepel)
+library(rddensity)
+
+here::i_am("flag_project.R")
+
+```
+
+```{r, echo=F}
+#Opening df
+working_df                <- read_dta("../Data/Working Datasets/Working_dataset_final.dta") 
+
+#Rearranging levels 
+working_df$gender         <- factor(working_df$gender, 
+                                levels = c("Male", "Female"))
+
+working_df$education_hs   <- factor(working_df$education_hs, 
+                                levels = c("Less than HS", 
+                                          "High school", 
+                                          "More than HS"))
+
+working_df$self_health    <- factor(working_df$self_health, 
+                                levels = c("Poor or bad", 
+                                           "Satisfactory", 
+                                           "Very good or good"))
+
+working_df$residence      <- factor(working_df$residence, 
+                                levels = c("West Germany",
+                                        "East Germany"))
+
+working_df$married        <- factor(working_df$married, 
+                                levels = c("Non-married",
+                                        "Married"))
+
+working_df$eligibility    <- factor(working_df$eligibility, 
+                                  levels = c("Before SRA", 
+                                             "After SRA"))
+
+working_df$retirement     <- factor(working_df$retirement, 
+                                  levels = c("Employed", 
+                                             "Retired"))
+
+working_df$retired_categories   <- factor(working_df$retired_categories, 
+                                   levels = c("Employed", 
+                                             "Recently retired", 
+                                             ">2 years retired"))
+working_df$retired_early        <- factor(working_df$retired_early, 
+                                   levels = c("Employed", 
+                                             "Retired early", 
+                                             "Retired after SRA"))
+
+
+#Subsetting 
+working_df_women          <- working_df %>%
+                             filter(GEVS==2)
+ 
+working_df_men            <- working_df %>%
+                             filter(GEVS==1)
+
+working_df_rdd            <- working_df %>%
+                             filter(LEAT==8 | LEAT==99)
+
+working_df_rdd_women      <- working_df_rdd %>%
+                             filter(GEVS==2)
+
+working_df_rdd_men        <- working_df_rdd %>%
+                             filter(GEVS==1)
+
+working_df_b1             <- working_df_rdd %>%
+                             filter(Z1>=-60 & Z1<=60)
+
+working_df_b2             <- working_df_rdd %>%
+                             filter(Z1>=-48 & Z1<=48)
+
+working_df_b3             <- working_df_rdd %>%
+                             filter(Z1>=-36 & Z1<=36)
+
+working_df_b4             <- working_df_rdd %>%
+                             filter(Z1>=-24 & Z1<=24)
+
+working_df_b1_women       <- working_df_b1 %>%
+                             filter(GEVS==2)
+
+working_df_b1_men         <- working_df_b1 %>%
+                             filter(GEVS==1)
+
+working_df_fe_rob         <- working_df %>%
+                             filter(GBJAVS<=1955)
+
+working_df_fe_rob_w       <- working_df_fe_rob %>%
+                             filter(GEVS==2)
+
+working_df_fe_rob_m       <- working_df_fe_rob %>%
+                             filter(GEVS==1)
+
+```
+
+\newpage
+
+## Glossary of Terms {.unnumbered}
+
+```{r, echo=F}
+
+terms        <- c("SWL", "SOEP",  "RV", "PAYG", "SRA", "OLS", "FE", 
+                  "RDD", "2SLS", "IV", "LATE", "ITT", "EM-Rente")
+
+definitions  <- c("Satisfaction with life", "German Socieconomic Panel", 
+                  "Administrative pension records from the Deutsche Rentenversicherung", 
+                  "Pay-as-you-go retirement scheme", "Statutory retirement age", "Ordinary least squares", "Fixed-effects", "Regression discontinuity design", "Two-stage least squares", "Instrumental variable", "Local average treatment effect", "Intent-to-treat", "Reduced-earning capacity pensions")
+
+glossary    <- data.frame(terms = terms, definitions= definitions)
+
+glossary %>%
+  kable(align = rep('l', 2), col.names = NULL, 
+        booktabs=T, 
+        bottomrule = '',
+        toprule = '',
+        midrule = '') %>%
+  kableExtra::kable_styling(position = 'center',latex_options = 'HOLD_position') 
+
+```
+
+\newpage
+
+## Motivation
+
+Advances in science and technology, coupled with large-scale changes in health practices involving improved sanitation, water purification, and a host of lifestyle alterations, have led to dramatic increases in longevity in developed nations around the world. At an individual level, life expectancies at birth have globally increased from 47 years in the mid-20th century to approximately 70 years by 2014, with projections suggesting a further increase to 76 years by the mid-21st century [@Leeson2014]. This increase in life expectancy, coupled with a decrease in fertility rates worldwide, has irrevocably changed the age distribution in the global population. Therefore, many scholars and policymakers argue that governments need to implement measures that encourage and enable people to continue working past the early retirement age, and even further [@Dubois2016].
+
+In the case of Germany, the government has decided to gradually increase its retirement age, reaching 67 years old by 2031. Despite the significance of this policy reform, discussions often omit its potential implications for individual well-being. While the effect of retirement on well-being has been widely studied, the findings have been rather inconclusive, with some studies showing a positive relationship [@Ekerdt1985; @Gall1997; @Reitzes2004], while others indicate a negative one [@Richardson1991], and some demonstrate no relationship at all [@Beck1982; @Hallerod2013; @Hyde2004; @Luhmann2012]. Furthermore, despite several studies exploring the effects of retirement on self-reported satisfaction with life (SWL), most of them are merely descriptive or correlational, preventing the isolation of the causal relationship between retirement and SWL [e.g. @Wetzel2016; @Gorry2018; @Fouquereau2001; @Pinquart2007]. For this particular event, overcoming the issue of self-selection bias is particularly challenging, since individuals can plan and choose when to retire once they reach the early or statutory retirement age. Moreover, given that individuals are aware of their retirement date, they can anticipate the effect of retirement, potentially influencing their current well-being levels. For these reasons, it is necessary to employ an identification strategy that allows the estimation of a causal effect.
+
+In this context, the present paper studies the impact of retirement on life satisfaction, focusing specifically on workers in Germany. For that purpose, two quasi-experimental methodologies are utilized: a fixed-effects (FE) estimation approach and a regression discontinuity design (RDD). The rest of the paper is organized as follows. Section 2 details the demographic and institutional context of the German Public Pension System. Section 3 discusses the relevant theories and hypotheses that link retirement and individual well-being. Section 4 presents a review of prior findings on the topic, while section 5 establishes the hypotheses to be tested. The following section describes the dataset and sample selection process in detail. Section 7 discusses the empirical strategies, while section 8 presents the main findings and section 9 performs robustness checks. Lastly, section 10 discusses the limitations of the study, and section 11 summarizes the main findings, provides policy recommendations and concludes.
+
+## Demographic and Institutional Context {#sec-context}
+
+### The Public Pension System in Germany
+
+The German public pension system covers approximately 90% of the workforce[^1] and plays a significant role in providing financial security for the elderly. Pension benefits account for about two-thirds of gross income of the old adults. This includes old-age pensions, disability pensions, and survivors' benefits. The system is financed through a pay-as-you-go (PAYG) scheme and maintains a strong contributory link. The calculation of pension benefits is based on a points system and depends on the entire working history. Under this system, a year's contribution at the average earnings of contributors earns one pension point. Moreover, pension points can be acquired during other insurance periods, such as unemployment, child raising, and while providing informal care. Pension benefits are roughly proportional to an individual's average lifetime earnings and feature few redistributive properties. Workers are eligible for the regular old-age pension after five years of pension contributions. However, retirement before the statutory retirement age (SRA) is possible under certain conditions, albeit with permanent deductions [@Barschkett2022; @Boersch2004; @Geyer2019].
+
+[^1]: There are a few groups of workers that are exempted from compulsory insurance: civil servants have a separate tax-financed, non-contributory defined benefit scheme; and most of the self-employed are not compulsorily insured [@Boersch2004].
+
+Previously, there were four different early retirement schemes available: the pension after unemployment or after partial retirement, the pension for long-term insured workers, the disability pension, and the pension for women. There is a fifth option, the invalidity pension ("Erwerbsminderungsrente" or EM-Rente), which is reserved for individuals with severe health problems who are unable to work more than three hours a day. In general, the calculation of pension benefits does not vary between these alternatives, whereas eligibility criteria differ. After some reforms that eliminated two of the schemes, currently only two early retirement pathways exist: the pension for long-term insured workers and the disability pension. Consequently, the possibilities for early retirement have become more limited [@Brussig2023].
+
+### Development of statutory and effective age at retirement
+
+Throughout the years, the minimum age to make a worker eligible for regular pension payments in Germany has varied greatly, with differences depending on whether the worker is a man or a woman. In general, @Brussig2023 shows that the SRA has gradually increased for both male and female workers. According to @tbl-sra, until 2012, the regular old-age pension regime's (Regelaltersrente) retirement age was 65 years for individuals born before 1947 [@TK2024]. From there, the SRA increased by 1 month for each following birth cohort until it reached 66 years for those born in 1958 in 2024. The SRA will continue to increase by 2 months for each subsequent birth cohort, until it reaches 67 years for those born in 1964 by 2031. @tbl-sra presents the SRA for each birth cohort from 1947 until 1958.
+
+```{r, echo=F}
+#| label: tbl-sra
+#| tbl-cap: "Regular SRA by birth cohort" 
+
+
+birth_cohort  <- c("1946 or before", "1947", "1948",
+                   "1949", "1950", "1951", "1952", 
+                   "1953", "1954", "1955", "1956", 
+                   "1957", "1958")
+
+regular_sra   <- c("65", "65+1 Month", "65+2 Months",
+                   "65+3 Months", "65+4 Months", "65+5 Months", 
+                   "65+6 Months", "65+7 Months", "65+8 Months",
+                   "65+9 Months", "65+10 Months", "65+11 Months",
+                   "66")
+
+start_retirement_period <- c("Until 02/2012", "02/2012-01/2013", 
+                             "03/2013-02/2014", "04/2014-03/2015", 
+                             "05/2015-04/2016", "06/2016-05/2017",
+                             "07/2017-06/2018", "08/2018-07/2019", 
+                             "09/2019-08/2020", "10/2020-09/2021", 
+                             "11/2021-10/2022", "12/2022-11/2023",
+                             "01/2024-12/2024")
+  
+sra_table     <- data.frame(birth_cohort = birth_cohort, regular_sra = regular_sra, start_retirement_period = start_retirement_period)
+
+sra_table %>%
+  kable(align=c("c","c","c"), 
+        col.names = c("Birth cohort", "Regular SRA", 
+                      "Start of retirement period"), 
+        booktabs=T) %>%
+  add_footnote("Source: Techniker Krankenkasse (2024)", 
+                notation = "none")   %>%
+  kable_styling(position = 'center',latex_options = 'HOLD_position')
+
+    
+```
+
+Concerning the effective retirement age, @Brussig2023 shows that it also follows an increasing trend. For men born in 1943, the average retirement age was 63.3 years, while for those born in 1954, it was 64.5. Female workers show a similar evolution, though their initial effective retirement age was lower. For those born in 1943, the average retirement age was 62.9 years. Meanwhile, female workers born in 1954 retire effectively at age 64.5, on average.
+
+## Theoretical Framework
+
+### Subjective well-being measurement
+
+According to @Helliwell2012 and @Stiglitz2010, individual well-being has many dimensions. It can be related to material conditions, such as household income or wealth, health status, social connections, or many other relevant variables that contribute to a person's overall well-being. Since every individual has their own definition of well-being, it would be hard to estimate it based on observable characteristics. For this reason, subjective well-being defined as self-reported life satisfaction serves as a variable that aggregates many dimensions of life and expresses an individual's judgement of their overall life quality. When asked to report their life satisfaction, individuals undergo a cognitive exercise. They make a personal evaluation of what constitutes a good life, consider which life dimensions are important to them, and then rank their life according to this judgment process [@Stiglitz2010].
+
+With this cognitive evaluation, respondents determine for themselves which life dimensions contribute to a good life and how important these life domains are. This process releases researchers from the challenging task of defining these dimensions. Satisfaction with life is recommended by @Stiglitz2010 and by the @OECD2013 as a measure of overall subjective well-being. However, criticism of the life satisfaction approach to well-being exists. Authors such as @Stewart2014 and @Sen1985 argue that main problems arise from difficulties in measurement, as well as the people's tendency to adapt their aspirations to their objective circumstances. Nonetheless, in this study, self-reported life satisfaction serves as an indicator of individual well-being.
+
+### Theories that link retirement and well-being
+
+#### Role theory
+
+One of the important factors driving the diverging and, to some degree, contradicting results of the relationship between retirement and well-being is that this relationship is greatly moderated by the circumstances surrounding the retirement decision. In this regard, role theory posits that, upon retirement, individuals experience a loss of various roles, such as the worker role, organizational member role, and career role. This loss may lead to feelings of anxiety and depression, ultimately resulting in a lower level of well-being in retirement [@Wang2011]. Indeed, @Elwell1981 found that the role loss due to retirement has a negative impact on life satisfaction, especially for men. However, being retired can also lead to the process of reawakening or strengthening other roles, such as the family member role and the community member role. In that sense, @Riley1994 characterizes retirement as a role transition.
+
+Given the differences in gender roles for women and men, it is important to take them into account when analyzing the evolution of SWL across the retirement transition. In this sense, some studies found that men tend to be more satisfied with their retirement than women [@Quick1998; @Calasanti2021]. Moreover, @Smith2004 argues that an important reason for the differences in the retirement experience lies in men's and women's differing labor force experiences and related differences in their resources and roles. For instance, @Calasanti1996 found that pre-retirement work experience such as gender segregation in the labor force negatively affects women's satisfaction after retiring.
+
+Furthermore, @Kulik1999 demonstrated that retired husbands are more dependent on their wives' expressive resources. In addition, Moen et al. [-@Moen2001] concluded that employed wives whose husbands had retired experienced lower marital quality compared to those whose circumstances were congruent with their husbands. Additionally, gender role ideology might also play an important role in the retirement experience, particularly if the woman is married. For example, @Voelz1985 found that when a male with a traditional gender role ideology was paired with a female with a modern ideology, they took longer to reach consensus on a decision task. Additionally, both partners expressed less satisfaction with the decision outcome compared to couples where the male and female shared the same gender role ideology.
+
+#### Continuity theory
+
+Opposite to role theory, continuity theory argues that the continuity in identity and self-concept will dominate, resulting in no significant changes in the level of well-being upon retiring [@Wang2011]. In other words, continuity theory stresses the importance of a relatively stable pattern of previously established role behavior in terms of maintaining life satisfaction. As individuals undergo anticipatory experiences prior to the actual role change, continuity theory tends to de-emphasize the negative aspects of retirement [@Bell1978].
+
+Continuity theory establishes that individuals can accommodate to life changes without experiencing stressful disruption. According to @Atchley1989, there is considerable continuity in identity and self-concept over the retirement transition. This continuity contributes significantly to the individual's adjustment to retirement. Rather than focusing on retirement as a disruptive role loss, continuity theorists view it as an opportunity to maintain social relationship and lifestyle patterns. For that reason, this theory predicts that there should not be a significant drop in well-being when people transition from work to retirement life unless severe difficulty in maintaining those general patterns is experienced [@Wang2011].
+
+### Retirement adjustment as a dynamic process
+
+A longitudinal and life course perspective has become widespread across the social sciences [@Mayer2009]. In particular, the life course principle of "human agency within structure" implies that individuals have plans, make choices, and undertake actions within the opportunities and constraints of their social worlds, which are shaped by personal history and social circumstances [@Settersten2003]. In this regard, the life course perspective states that life transitions are contextually embedded, which for the specific case of retirement implies that the adjustment experiences are contingent on the specific circumstances under which the adjustment occurs.
+
+According to this theory, the adjustment to retirement differs between individuals and over time [@van2013]. @Atchley1976 describes retirement as a multi-stage process. New retirees first experience a "honeymoon" phase: they feel energetic, healthy and satisfied with their new status. After some time, they enter a second stage in which these positive, sometimes unrealistic, expectations of retirement lead to disenchantments, and in the end, the person adjusts to their new status.
+
+@Wang2011 also recognize the fact that the impact of retirement varies across individuals and over time. As such, the authors describe retirement adjustment as a process during which retirees' levels of adjustment (i.e., psychological comfort regarding the retirement life) may fluctuate as a function of individual resources and changes in these resources over time. Furthermore, @Wang2011 assume that adjustment is reached when individuals are not preoccupied with the retirement transition, but are comfortable with the changed circumstances of life in retirement.
+
+Set-point theory addresses the adjustment to retirement over time in a similar manner. In summary, this hypothesis posits that the retirement adjustment process culminates within the framework of the life course perspective. According to set-point theory, individuals have varying but stable levels of subjective well-being over time, primarily influenced by personality traits or factors inherited or determined early in life. During adulthood, subjective well-being should not change. Moreover, major life events can cause deviations from the set-point but their effects are temporary and well-being returns to its baseline level after some time [@Lykken1996].
+
+Nevertheless, there have been several investigations which have challenged and revised the set-point theory using longitudinal surveys [@Easterlin2005; @Huppert2005; @Diener2006; @Headey2006]. For instance, using data from the SOEP and the British Household Panel Study, @Lucas2007 showed that long-term levels of subjective well-being change, and adaptation is not inevitable after events such as marital transitions, bouts of unemployment and the onset of a disability. Furthermore, taking advantage of the SOEP being one of the first longitudinal surveys recording the SWL of respondents for a long period, @Headey2008 discovered that some minorities experience long-term changes in their life satisfaction, which might happen due to variations in their personality traits. However, they cannot rule out the possibility that the subjective well-being levels could have modified individuals' personality trait scores.
+
+## Literature Review
+
+Empirical research on the association between retirement and life satisfaction is contradictory. Some of the causes of these discrepancies could be the lack of common theoretical foundations and the diversity in analytic methods. Notably, some of the earlier research on the topic used to apply a simplistic pre-post model of retirement adjustment and usually failed to capture differences between sub-groups [@Wetzel2016]. More recent studies emphasize the existence of heterogeneous effects and different time phases regarding the retirement process.
+
+One of the earlier investigations on the relationship between retirement and SWL is that of @Bell1978. He found that male respondents underwent a decline in life satisfaction with retirement, using a pre-post retirement approach and a set of three interviews with a group of individuals residing in an urban area of central Missouri. Contrary to this example, most of the recent investigations on retirement and life satisfaction have employed longitudinal data in order to test their hypotheses. For instance, Gorry et al.[-@Gorry2018] utilized the Health and Retirement Study and an instrumental variable methodology to estimate the impact of retirement on physical and mental health, life satisfaction, and health care utilization among US workers. They found strong evidence that retirement improves life satisfaction, but only for the first four years.
+
+@Heybroek2015 investigated changes in life satisfaction across the entire retirement transition. Using latent growth mixture models and information from the first eleven waves of the Household, Income and Labor Dynamics in Australia survey, they concluded that there is considerable diversity in life satisfaction. In general, individuals who experienced significant declines in life satisfaction tend to have worse health and lower access to a range of social and economic resources compared to other groups. This coincides with the findings of other authors, who identify heterogeneous effects depending on the nature of the retirement decision or socioeconomic characteristics before retirement, thus emphasizing the role of sub-group analysis when studying this relationship.
+
+For instance, @Hershey2014 measured SWL among 1,388 older Dutch workers and concluded that the reasons for retirement influenced future well-being levels. Specifically, those who voluntarily departed from the workforce reported higher levels of perceived SWL compared to those who remained employed, whereas the life satisfaction scores of those whose departure was involuntary (due to health or organizational reasons) were found to be the lowest. Furthermore, Fouquereau et al.[-@Fouquereau2001] collected information on 103 individuals in France (50 workers and 53 retirees), and suggested the existence of seven important factors for the judgment of satisfaction with retirement: physical health, financial situation, social activities, the ability to pursue one's own interests, marital life, freedom and control, and reduced responsibilities.
+
+For Germany, the investigation of @Pinquart2007 supports the existence of heterogeneous impacts in the relationship between retirement and life satisfaction. They investigated changes in life satisfaction in 1,456 German retirees and identified three main groups of people who experienced retirement differently based on their socioeconomic, demographic, and health characteristics. In the first group, satisfaction declined at retirement but continued on a stable or increasing trajectory thereafter. Meanwhile, individuals in the second group showed a large increase in satisfaction at retirement but experienced overall declining satisfaction, and members of the third group underwent a temporary very small increase in satisfaction at retirement. They concluded that resource-rich individuals are less likely to experience retirement-related changes in satisfaction.
+
+Wetzel et al. [-@Wetzel2016] used data from the German Socioeconomic Panel (SOEP) to estimate a multi-group, multi-episodes dual change score model. They concluded that the development of life satisfaction is lastingly interrupted by retirement. In the short term, there is an increase in life satisfaction, which is more pronounced for those who were previously unemployed. Later, retirees who have more education show almost constant life satisfaction, while those with lower levels of education experience a decline. In summary, they arrive to a similar conclusion: social status and resources influence the retirement adjustment.
+
+There are several investigations that have utilized fixed-effects models to study the impact of retirement on individual well-being in Germany. For instance, @Merz2018 utilized individual longitudinal data from 33 waves of the SOEP and a fixed-effects robust panel method to analyze whether life satisfaction is decreasing before retirement, increasing at the entrance into retirement, and decreasing after certain periods (back to a foregoing level). He found that individual and family situation boost life satisfaction after retirement for many years. This holds for pensioners (German pension insurance - RV), but there is no significant effect for civil service pensioners. @Bonsang2012 show the effects of retirement on various well-being measures available in the SOEP utilizing a standard linear within-group (FE) estimator. They concluded that the overall effect on life satisfaction is negligible, while satisfaction with the free time increases and satisfaction with household income decreases. Moreover, involuntary retirement results in an overall negative effect that can partly be explained by a bigger drop in income satisfaction and a smaller increase in satisfaction with the free time.
+
+Concerning regression discontinuity designs (RDD), some papers utilize the SRA in Germany to find the effect of retirement on different outcomes. For example, @Muller2018 support the existence of intra-household spousal retirement externalities. They studied the causal effect of spousal retirement utilizing a fuzzy RDD based on the statutory retirement ages on various health behaviors and health status across 19 European countries (including Germany). Their results indicated an increase in the frequency and intensity of alcohol consumption, accompanied by a decrease in moderate physical activities as a response to the partner's retirement. They conclude that subjective health is negatively affected by spousal retirement. Lastly, @Giesecke2019 estimated the effect of retirement on mortality, exploiting two discontinuities at age-based eligibility thresholds for pension claiming in Germany (early and regular). Using variation from bunching of retirements at age-based eligibility thresholds, he demonstrated that retirement can have both mortality-decreasing and mortality-increasing effects, depending on the group of retirees who comply to eligibility at each threshold.
+
+## Hypotheses
+
+There are two main theories that link retirement and SWL. The first one, known as the role theory, posits that the role loss associated with retirement will lead to feelings of anxiety and depression among workers. Specifically, individuals who are deeply committed to their work may perceive the loss of their central role as challenging to replace with new activities. Moreover, individuals lacking adequate resources may encounter particular difficulty in maintaining life satisfaction across the retirement transition [@Fry1992; @Bell1978; @Heybroek2015; @Pinquart2007].
+
+On the contrary, the continuity theory suggests that individuals should be able to anticipate the effects of retirement and prepare accordingly, mitigating any negative impact on their well-being due to the loss of role. According to this theory, retirement presents an opportunity for individuals to maintain social relationships and lifestyle patterns. Furthermore, retirement offers a significant increase in the amount of free time available, potentially leading to an improved sense of agency or freedom. Retirement also provides old-age individuals with the opportunity to allocate more time to activities that bring them happiness, such as spending time with relatives, friends, or engaging in personally fulfilling endeavors. Support for this hypothesis can be found in the findings of @Merz2018, who demonstrated that both individual and family situations contributed to increased life satisfaction even many years after retirement. Additionally, @Bonsang2012 found that retirement has a considerable positive effect on satisfaction with free time utilizing the SOEP. Several other authors have reported similar positive effects of retirement on SWL [@Wetzel2016; @Hershey2014; @Gorry2018]. Although role theory would predict an overall negative impact of retirement on SWL; it appears more likely that, given the ability to anticipate and plan for retirement, continuity theory dominates. In addition with the increase in free time and the opportunity to engage in fulfilling activities, the effect of retirement on SWL is expected to be positive.
+
+An important factor contributing to an overall negative experience during the retirement adjustment process is declining health [@Pinquart2007]. Individuals in poor health are not only more likely to retire earlier but also tend to report lower life satisfaction. Moreover, as individuals age, their health status typically deteriorates, leading to decreased self-reported life satisfaction [@Supan2006]. For these reasons, the self-reported health status is included as a control variable in the regression models. By accounting for it, the positive effect of retirement on SWL will be magnified. This expectation is based on the understanding that health status can influence both retirement experiences and overall life satisfaction.
+
+-   **Hypothesis 1**: Retirement has a positive effect on SWL.
+-   **Hypothesis 1a**: After accounting for the self-reported health status in the regression models, the effect of retirement on SWL will be greater.
+
+According to @Sohier2021, early retirement in Europe often corresponds to occupations that involve more physically demanding work. In this sense, transitioning to retirement before reaching the SRA might represent earlier relief to individuals in such conditions. Furthermore, @Supan2006 hypothesize that early retirement can be beneficial for those who retire early, as they make use of what the authors describe as "generous" retirement incentives. Besides, in contexts where individuals have the freedom to choose when to retire, it is reasonable to expect that those who benefit the most from early retirement are those most likely to retire early. For these reasons, the authors make an important assumption and state that early retirement is always voluntary. While this is certainly not always the case, it suggests that early retirees exercise agency when choosing to exit the labor market, which might lead to a greater improvement in individual well-being [@Heybroek2015; @Hershey2014].
+
+-   **Hypothesis 2**: Workers who opt for early retirement exhibit a greater increase in their SWL compared to workers who retire regularly (after reaching the SRA). This hypothesis is tested by converting the "retirement" binary variable, which distinguishes between employed and retired individuals, into a categorical one. This categorization separates the retired individuals based on whether they retired early or after reaching the SRA.
+
+@Elwell1981 argue that the role loss caused by retirement has a greater negative effect on life satisfaction, specifically for men. Men often attach greater importance to their role as workers or "breadwinners," leading to a potentially larger negative effect compared to women. While there are particular factors that may affect women more negatively than men in the retirement process, such as worse work experiences prior to retirement or differences in gender role ideology with the spouse [@Calasanti2021; @Smith2004; @Voelz1985]; it is argued that retirement is overall less beneficial for men. This is because they are more negatively impacted by role loss than women.
+
+-   **Hypothesis 3**: Retirement has a larger positive effect on SWL for women compared to men.
+
+There are numerous reasons that contribute to a worker's decision to retire at a particular point in time. For instance, when it comes to early retirement, there are self-selection factors that play a crucial role and should be considered. Some workers may be unable to retire early due to restrictions imposed by their employers, while others may not meet the eligibility criteria of specific early retirement schemes. Moreover, the reasons why workers decide to enter retirement vary widely, ranging from health concerns to the need to care for a spouse or the physical demands of their current job. In summary, entering retirement depends on several variables such as institutional policies, health status, the employment status of the spouse, etc. These make the retirement indicator inherently endogenous. Consequently, the quasi-experimental methodologies are employed to address these self-selection issues in various ways, as will be elaborated upon in @sec-method.
+
+-   **Hypothesis 4**: Regression analysis that studies the effect of retirement on SWL may be biased as it does not account for the selection into retirement. In particular, poor health and a physically demanding job may be strong factors that select workers into early retirement. As a result, simple linear regression models might underestimate the effect of retirement on individual well-being. Accounting for selection in the regression models will lead to a larger positive effect.
+
+In the long run, individuals who retire tend to adapt to their new situation, and over time, go back to their standard levels of well-being. This assertion is based on the set-point theory, which posits that well-being levels revert to their set-point even after major events in the life course. In addition, empirical evidence concludes that retirement has no lasting effects on individual well-being [@Pinquart2007; @Gorry2018; @Sohier2021].
+
+-   **Hypothesis 5**: After an initial positive impact, the transition from work to retirement will not have lasting positive effects on SWL. This hypothesis is tested by transforming the "retirement" binary variable into a categorical one, which distinguishes between employed, recently retired individuals, and those who have been retired for more than 2 years, following @Sohier2021.
+
+## Data
+
+### Data description
+
+This paper utilizes data from the German Socioeconomic Panel (SOEP) linked with the administrative pension records from the Deutsche Rentenversicherung (RV). The SOEP is an ongoing longitudinal survey of private households in Germany that has been conducted since 1984, surveying around 25,000 individuals annually since 2010 [@Luthen2022]. The survey covers a broad range of individual and household-level variables including socioeconomic status, political attitudes, psychological and health indicators, satisfaction and worries, expectations, family background, and education. Additionally, SOEP provides information on age, employment and retirement status, income types (including pensions), as well as assets and debts.
+
+The SOEP has several advantages over other sources of information because, for several respondents, it started before the event of retirement and continues to follow retirees over longer time intervals. This enables both a cross-sectional and longitudinal study of the transition into retirement. The SOEP-RV project joins data from participants in the SOEP survey with their individual administrative records from the RV.[^2] In this way, the SOEP-RV creates a linked dataset that combines the comprehensive multi-topic SOEP data with detailed cross-sectional and longitudinal data on social security pension records covering the individual's entire insurance history.
+
+[^2]: Only if individuals agree to have their administrative pension records linked to their SOEP information.
+
+### Analytical samples
+
+This investigation utilizes two different analytical samples for the estimations. The first one is a longitudinal sample, which is used for the fixed-effects models, while the second one is a cross-section, utilized for the regression discontinuity design. Both samples are obtained after following these steps:
+
+1.  Out of the 14,617 unique individuals in the SOEP who voluntarily agreed to have their pension records linked to their SOEP data, 1,817 are excluded because they lack information on their socio-demographic indicators (module pgen) and satisfaction with life (module pequiv) from the SOEP.
+2.  10,937 unique individuals (125,250 person-years) are dropped in order to preserve only individuals aged 60 to 70.
+3.  146 individuals (482 person-years) are excluded from the analysis because they received reduced earning capacity pensions (EM-Rente) or non-specified types of pensions. These individuals could potentially bias the results if not separated from the analysis, given that they suffered from a major health condition that did not allow them to continue working. The ones with non-specified types of pensions represent a very small population (3 individuals), and given the lack of information on their pension regime, they are dropped.
+4.  51 individuals (367 person-years) with missing information on their gender are deleted.
+5.  32 unique individuals (412 panel observations) who do not report their SWL are excluded from the sample.
+6.  24 individuals (49 person-years) with missing information on their month of birth (which is necessary for the construction of the running variable for the regression discontinuity design) are dropped.
+7.  78 panel observations with missing information on self-reported health status and highest education level attained are excluded from the analysis.
+
+The final panel sample comprises 3,426 unique individuals and a total of 20,486 person-years. The descriptive statistics of the sample are presented in @tbl-desc-1. The sample is separated between employed (9,507 observations) and retired (10,979 observations). The average self-reported SWL is slightly higher for the retired group (7.45) compared to the employed group (7.38). In both groups, the share of women is higher than the share of men, specially for the retired group (56% versus 51%). Concerning the birth cohorts, in the employed group, the majority of observations were born in the years 1951-1960 (59%), reflecting the data collection period of the SOEP-RV, which extends until 2020 and includes cases that have not yet reached the SRA. On the contrary, among the retired, only 24% of the panel observations were born in 1951-1960; while the majority were born in the years 1941-1950 (56%). Regarding the education level, most of the respondents completed high school, with 61% in the employed group and 66% among the retired. Only 30% of observations in the employed group attained a higher education level after high school, which is higher than the 23% in the retired group. Respondents in the employed group report a satisfactory health status in 40% of their person-years, and a good or very good health status in 42% of the cases. The retired spend 42% of their person-years enjoying a satisfactory health status, and 37% in a good or very good health status. Additionally, the employed and retired spend around 73-72% of their person-years married, respectively. Lastly, the proportion of respondents living in West Germany is greater than those living in East Germany, with 70% among employees and 65% among retirees.
+
+```{=tex}
+\begingroup
+\fontsize{11pt}{11pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-desc-1
+#| tbl-cap: "Summary statistics by retirement status" 
+
+
+working_df    %>%  tbl_summary(include = c(overall_swl, gender, birth_cohort, 
+                                           education_hs, self_health, married, 
+                                           residence),
+                               by=retired, 
+                               missing="no",
+                               label = list(overall_swl ~ "Sat. with Life (0-10)",
+                               gender ~ "Gender",
+                               birth_cohort  ~ "Birth cohort",
+                               education_hs ~ "Education level", 
+                               self_health ~ "Self-reported health status", 
+                               married ~ "Marital status", 
+                               residence ~ "Place of residence"), 
+                               statistic = list(
+                               all_continuous() ~ "{mean} ({sd})")) %>%
+                    add_overall(last = TRUE,
+                          col_label = md("**Overall**")) %>%
+                    modify_header(label = "**Variable**",
+                                  stat_1 = "N={n}", 
+                                  stat_2 = "N={n}") %>%
+                    bold_labels() %>%
+                    as_gt() %>%
+                    gt::tab_spanner(
+                    columns = c(stat_1), 
+                    label =  md("**Employed**"),
+                    gather = FALSE, 
+                    level = 2) %>%
+                    gt::tab_spanner(
+                    columns = c(stat_2), 
+                    label =  md("**Retired**"),
+                    gather = FALSE, 
+                    level = 2)  
+```
+
+```{=tex}
+\endgroup
+```
+For the regression discontinuity analysis, the analytical sample construction process follows the steps previously mentioned. However, only individuals who retired through the regular old-age pension or who did not retire until age 70 are considered in the analysis. The reason behind this is that a significant part of the workers in the sample chose to retire early (53%). Since the method exploits the source of exogenous variation created by the SRA cutoffs for the different birth cohorts, including them in the fuzzy RDD would bias the results, as the first stage would not be strong enough. For this reason, only the group that retired through the regular scheme and those who did not retire until 70 are preserved for this part of the analysis. Consequently, the results from the RDD only apply to a very specific subgroup of the sample of old-age workers, and it is not possible to distinguish effects between workers who retired early versus those who retired after reaching the SRA. For this methodology, the time aspect is not considered and the sample is utilized as a simple cross-section.[^3] After preserving only the regular pension retirees and the ones who did not retire until age 70, the final RDD sample comprises 8,885 individuals. The default bandwidth for this sample includes observations who were interviewed up to 86 months before reaching the SRA and 67 months after reaching the SRA. In the robustness section, alternative bandwidth selections will be considered.
+
+[^3]: Given that the running variable is the date of birth (in months), the birth cohort is not included as a control variable in the RDD estimations.
+
+```{r,  echo=F}
+#| label: tbl-desc-2
+#| tbl-cap: "Summary statistics by regular old-age pension eligibility" 
+
+
+working_df_rdd     %>%  tbl_summary(include = c(overall_swl, gender, 
+                                           education_hs, self_health, married, 
+                                           residence),
+                               by=eligibility, 
+                               missing="no",
+                               label = list(overall_swl ~ "Sat. with Life (0-10)",
+                               gender ~ "Gender",
+                               education_hs ~ "Education level", 
+                               self_health ~ "Self-reported health status", 
+                               married ~ "Marital status", 
+                               residence ~ "Place of residence"), 
+                                statistic = list(
+                                  all_continuous() ~ "{mean} ({sd})")) %>%
+                   add_overall(last = TRUE,
+                          col_label = md("**Overall**")) %>%
+                    modify_header(label = "**Variable**", 
+                                  stat_1 = "N={n}", 
+                                  stat_2 = "N={n}") %>%
+                    bold_labels() %>%
+                    as_gt() %>%
+                    gt::tab_spanner(
+                    columns = c(stat_1), 
+                    label =  md("**Non-eligible**"),
+                    gather = FALSE, 
+                    level = 2) %>%
+                    gt::tab_spanner(
+                    columns = c(stat_2), 
+                    label =  md("**Eligible**"),
+                    gather = FALSE, 
+                    level = 2) 
+                    
+
+```
+
+The descriptive statistics of the sample are presented in @tbl-desc-2. The sample is separated into two groups: non-eligible workers, who are younger than the relevant SRA (5,726); and eligible workers, who are older than the SRA (3,159). The average self-reported SWL is higher for the eligible group compared to the non-eligible (7.59 versus 7.37). Just like in the panel sample, the majority of respondents in both groups are women, with 55% among the non-eligible and 54% among the eligible. Regarding the highest level of education attained, a significant percentage of the non-eligible and eligible individuals finished high school (57% for both groups), while only 33% among the non-eligible and 31% among the eligible completed an education program after high school. 41% of observations in the non-eligible group report a good or very good health status, which is very similar to the 40% of the eligible group. Moreover, 39% of individuals in both groups report enjoying a satisfactory health status. The share of respondents who are married is similar in both groups, ranging between 70% (non-eligible) and 71% (eligible). Finally, the majority of observations report living in West Germany, with 77% for the eligible and 81% for the non-eligible.
+
+## Empirical Strategy {#sec-method}
+
+This investigation employs two different methods to study the relationship between retirement and SWL. The first one is a fixed-effects model, which utilizes panel data and a treatment variable that changes by individual and year. The second one is a fuzzy regression discontinuity design (RDD), which exploits the source of exogenous variation stemming from the SRA cutoffs for each birth cohort. Since not all workers retire when they reach SRA, the fuzzy RDD uses the SRA eligibility as an instrumental variable (IV) to find the impact of retirement on SWL for the subset of compliers.
+
+*Hypotheses 1, 2, 3, 4 and 5* are tested using the FE models. Additionally, *Hypotheses 1, 3, and 4* are evaluated again utilizing the results from the RDD specifications. However, due to the RDD results applying solely to a very specific subgroup of the total sample, and the estimations ignoring the time aspect, *Hypotheses 2 and 5* cannot be evaluated.
+
+### Fixed-effects
+
+To estimate the effect of retirement on SWL for old-age workers in Germany, the SOEP-RV dataset allows panel estimations. This estimation approach is preferred to pooled ordinary least squares (OLS), as it deals with unobserved time-invariant heterogeneity between individuals. In the case of variables that capture well-being (such as self-reported SWL), this is necessary because more than 50 percent of the variation in subjective well-being is explained by personality traits [@Pagan2013]. For instance, personality could influence what an excellent SWL score means for a person. These unobserved and time-invariant individual effects are otherwise difficult to capture and can lead to inefficient or biased estimates in an OLS regression.
+
+To control for all time-invariant individual characteristics, the fixed-effects (FE) approach only relies on the variation over time (within-variation). As such, the effect of retirement on SWL is estimated by using the variation of the individuals who made the transition from employment to retirement during the observation period (ages 60 to 70) in the panel sample. The estimated effects capture the average impact on SWL of the change in employment status controlling for unobserved time-invariant heterogeneity. By estimating separate FE models by gender, it is possible to identify whether retirement had a different impact on workers' well-being depending on their gender. Moreover, by using FE, it is not needed to specify time-invariant sociodemographic characteristics in the regression such as gender, birth cohort, education level, marital status, or place of residence. Hence, SWL is estimated by the following equation:
+
+$$
+ Y_{it} = \alpha_{i} + \beta D_{it} + \gamma X^{'}_{it} + \lambda_{t} + \epsilon_{it} 
+$$ {#eq-1}
+
+Where $Y_{it}$ represents the self-reported overall SWL, which ranges from 0 to 10 and varies over time and between individuals. $D_{it}$ denotes the treatment status, which takes value 0 before retirement and 1 afterwards.[^4] $X$ is a vector of control variables that vary over time, in this case only the self-reported health status. $\alpha_{i}$ captures the individual-specific effects, while $\lambda_{t}$ are the age fixed-effects and $\epsilon_{it}$ is the idiosyncratic error term.
+
+[^4]: For the purpose of this investigation, individuals are considered retired as soon as they start receiving pension benefits.
+
+Furthermore, in order to test long-term effects of retirement and differences between early retirement and retirement after the SRA, the following additional FE models are estimated:
+
+$$
+ Y_{it} = \alpha_{i} + \beta E_{it} + \lambda_{t} + \epsilon_{it} 
+$$ {#eq-2}
+
+$$
+ Y_{it} = \alpha_{i} + \beta L_{it} + \lambda_{t} + \epsilon_{it} 
+$$ {#eq-3}
+
+In @eq-2, the term $E_{it}$ considers the following categories: employed (reference), retired early (before the SRA), and retired after the SRA. Meanwhile, the variable of interest in @eq-3 is $L_{it}$, which captures long-term effects of retirement. It consists of the following categories: employed (reference), recently retired (2 years or less after retirement) and retired for more than 2 years. These models will be estimated for the entire panel sample and by gender.
+
+### Regression Discontinuity
+
+To estimate the Local Average Treatment Effect (LATE) of retirement on SWL, a fuzzy regression discontinuity design is utilized. As @fig-rd-1 shows, the probability jump above the regular retirement eligibility threshold (which is the SRA in months) is not 100%, but rather around 60%. This is explained by the fact that workers who are older than the SRA self-select themselves into retirement. For these reasons, estimating the effect of retirement on SWL using a sharp RDD would be incorrect. Instead, the eligibility threshold is used as an instrumental variable (IV) in the estimation of the probability of receiving the regular pension, and the estimated values are utilized for the estimation of a two-stage-least-squares (2SLS). In the second stage, the dependent variable is the overall SWL. Given that the eligibility cutoff is exogenous, the IV is both relevant and orthogonal, allowing for the estimation of a causal effect.
+
+```{r, echo=F}
+#| label: fig-rd-1
+#| fig-cap: "Probability of receiving the regular pension"
+
+working_df_rdd %>%
+  filter(Z1>=-67) %>%
+  ungroup %>% 
+  mutate(`Retired` = ifelse(Z1 >= 0, "Eligible", "Non-eligible")) %>% 
+  ggplot(aes(x = Z1, y = retired, group=`Retired`, color=`Retired`)) +
+  geom_point(data= working_df_rdd %>% 
+              filter(Z1>=-67) %>%
+              ungroup %>% 
+              group_by(Z1) %>% 
+              summarize(retired = mean(retired),
+                        num_obs = n()),
+             aes(x = Z1, y=retired, size=num_obs), alpha=0.15, inherit.aes=F) +
+  geom_smooth(method="lm") +
+  scale_color_manual(values=c("black", "darkgrey")) +
+  geom_vline(xintercept=0, linetype="dashed", alpha=.7) +
+  theme_classic() +
+  labs(x = "Age minus SRA (in months)", y="", caption=
+"Notes: 1/. The dots show average values of the outcome, receiving a regular pension, 
+within small population bins. 2/. The lines are linear regressions fit on each side 
+of the threshold. 3/.The plot considers a bandwidth of 60 months before and after
+reaching the SRA. 4/.Observations located to the right side of the cutoff line are 
+eligible for the regular pension.
+Source: SOEP-RV (2020).") +  
+  scale_x_continuous(breaks=seq(-60,60,20), 
+                     limits=c(-60,60)) +
+  guides(color=FALSE, size = FALSE) +
+  theme(plot.caption = element_text(hjust=0))
+
+```
+
+The estimation equations for the fuzzy RDD are the following:
+
+$$
+ P_{i} = \alpha + \beta D_{i} + \gamma D_{i}(Z_{i}-Z_{0}) + \theta (Z_{i}-Z_{0})+ \epsilon_{i} 
+$$ {#eq-4}
+
+$$
+ Y_{i} = \mu + \lambda \hat{P}_{i} + \delta X_{i} + \gamma D_{i}(Z_{i}-Z_{0}) + \theta (Z_{i}-Z_{0}) + \eta_{i}
+$$ {#eq-5}
+
+@eq-4 represents the first-stage of the LATE estimation. $P_{i}$ is a dummy variable which takes the value of 1 if the individual receives the regular old-age pension and 0 otherwise. The running variable $Z_{i}$ is defined as the age in months, while the cutoff $Z_{0}$ is set to the SRA in months for the corresponding birth cohort. Hence, the term $Z_{i}-Z_{0}$ represents the age in months centered around the cutoff. $D_{i}$ is a binary indicator which takes the value of 1 if the worker was eligible for the regular pension ($Z_{i}-Z_{0}>=0$) and 0 otherwise.
+
+@eq-5 utilizes the results from the first-stage to find the LATE of retirement on SWL. $Y_{i}$ is the main dependent variable, self-reported overall life satisfaction, which ranges from 0 to 10. $X_{i}$ is a vector of sociodemographic control variables at the individual level, which include: gender, education level, self-reported health status, marital status, and place of residence.
+
+## Results and Discussion
+
+### Descriptive findings
+
+#### Effective retirement age
+
+While the primary focus of this investigation is on the impact of retirement on SWL, it is also valuable to provide descriptive findings that illustrate the effective retirement age for individuals in the sample. As presented in @sec-context, the SRA for the sample falls around 65 and 66 years old; however, certain retirement schemes permit workers to retire before reaching the SRA. Using the SOEP-RV data, @fig-era1 shows the evolution of the average effective age at retirement, following @Brussig2023. The plot reveals that the trend for both women and men is increasing. Specifically, the 1922-1940 birth cohort presented average effective retirement ages around 62.6 for women and men. From there, the average age at retirement increased, although the increase was faster for men than for women. For example, the average age at retirement for men belonging to the 1941-1945 birth cohort was 63.4, higher than the 62.8 for women. For both women and men born between 1951-1960, the average age at retirement is 64 years.
+
+```{r, echo=F}
+#| fig-cap: "Average effective age at retirement by birth cohort and gender"
+#| label: fig-era1
+
+cohort_labels  <- c("1922-1940", "1941-1945","1946-1950", "1951-1960")
+
+working_df %>%
+  filter(years_retirement==0) %>%
+  mutate(cohort_plot = ifelse(GBJAVS>=1922 & GBJAVS<=1940, 1, 
+                       ifelse(GBJAVS>=1941 & GBJAVS<=1945, 2,
+                       ifelse(GBJAVS>=1946 & GBJAVS<=1950, 3,
+                       4)))) %>%
+  group_by(cohort_plot, gender) %>%   
+  summarize(mean_age=mean(age_years, na.rm=T)) %>%  
+  ggplot(aes(x=cohort_plot, y=mean_age, colour=gender)) +
+  geom_point(na.rm=T) +
+  geom_line() +
+  geom_label_repel(aes(label = round(mean_age,1)),
+                       colour = "black", size = 3) +
+  scale_color_manual(labels = c("Men", "Women"), values = c("blue", "red")) +
+  scale_x_continuous(breaks=seq(1,4,1), 
+                     labels=cohort_labels) +
+  scale_y_continuous(limits=c(62,64.5), 
+                     breaks=seq(62,64.5,0.5)) +
+  labs(title = "", caption = 
+"Notes: 1/.The plot considers recipients of all types of pensions, except for reduced-
+earning capacity pensions (EM-Rente). 2/.The estimate for the birth cohort 1951-
+1960 is biased because it includes censored cases. In other words, workers who
+were born after 1955 and have therefore not reached the SRA yet. 
+Source: SOEP-RV (2020).", y="Average age at retirement", x="Birth cohort", color="Gender") +
+  theme_classic() +
+  theme(plot.caption = element_text(hjust=0))
+
+```
+
+@fig-coh-women displays the share of female workers in the SOEP-RV who retired at each age by birth cohort. A significant share of women who were born between 1922-1940 retired early. Specifically, around 49% of them retired between 60 and 61. Likewise, a considerable proportion of women belonging to the 1941-1945 birth cohort retired at age 63 or before (57.7%). In the 1945-1950 birth cohort, only 15% of women retired at age 60, which is lower than the percentages of women retiring at the same age for the previous cohorts. Moreover, the proportions of women who retired at ages 61 and 63 also decreased compared to earlier birth cohorts. Almost 40% of women belonging to the 1946-1950 birth cohort retired at the SRA (65), and 13% retired at 66. In the 1951-1960 birth cohort, 33.7% of female workers retired at 63, although it is important to mention that the calculation for this group is biased because it includes workers who had not yet reached the SRA by 2020. In summary, the plot confirms that the proportion of women who retire early has declined in later birth cohorts.
+
+```{r, echo=F}
+#| label: fig-coh-women
+#| fig-cap: "Percentage of retired women at each age by birth cohort"
+
+legend_labels  <- c("60" = "60", "61" = "61", "62" = "62", "63" = "63", "64"="64", "65"="65","66"="66", "10000"=">66")
+
+cohort_labels  <- c("1922-1940", "1941-1945","1946-1950",
+                    "1951-1960")
+
+#Women
+working_df   %>%
+  filter(GEVS==2 & years_retirement==0)  %>% #Keeping cohorts and women in the year of retirement
+  mutate(cohort_plot = ifelse(GBJAVS>=1922 & GBJAVS<=1940, 1,
+                       ifelse(GBJAVS>=1941 & GBJAVS<=1945, 2,
+                       ifelse(GBJAVS>=1946 & GBJAVS<=1950, 3, 
+                       4))),
+         age=ifelse(age_years>66,10000,age_years)) %>%
+  group_by(cohort_plot, age) %>%
+  summarize(n = n()) %>%
+  mutate(share = (n/sum(n)) * 100) %>%
+  ggplot(aes(x=cohort_plot, y=share)) +
+  geom_col(aes(fill = as.factor(age))) +
+  geom_text(aes(x=cohort_plot, y=share, label=ifelse(share>4,round(share,1),""), group=as.factor(age)), 
+            position=position_stack(vjust = 0.5), size=3)+
+  labs(title = "", caption = "
+Notes: 1/. The plot considers recipients of all types of pensions, except for reduced-
+earning capacity pensions (EM-Rente). 2/.The estimate for the birth cohort 1951-
+1960 is biased because it includes censored cases. In other words, workers who
+were born after 1955 and have therefore not reached the SRA yet. 
+Source: SOEP-RV (2020).", y="% of women", x="Birth cohort", fill="Retirement age") +
+  scale_fill_brewer(labels=legend_labels, 
+                    palette="Reds") +
+  scale_x_continuous(breaks=seq(1,4,1), 
+                     labels=cohort_labels) +
+  theme_classic() + 
+  theme(plot.caption = element_text(hjust=0))
+
+
+```
+
+For men, the trend is essentially the same. In the 1922-1940 birth cohort, around 30% of men retired at age 60 and, in total, more than 60% of male workers retired at the SRA of 64. For men belonging to the 1941-1945 birth cohort, the proportion of men retiring before the SRA decreased significantly. In particular, only around 43% of men retired before the SRA. Furthermore, a considerable percentage of workers entered retirement at 65 (41.3%). The proportion of men who retired early continued to decline in the 1946-1950 birth cohort, with only 30% retiring before reaching the SRA. Moreover, a larger share of workers retired at age 65 compared to the previous cohort (46.2%).
+
+```{r, echo=F}
+#| label: fig-coh-men
+#| fig-cap: "Percentage of retired men at each age by birth cohort"
+
+legend_labels <- c("60" = "60", "61" = "61", "62" = "62", "63" = "63", "64"="64", "65"="65", "10000"=">66")
+
+
+cohort_labels  <- c("1922-1940", "1941-1945","1946-1950",
+                    "1951-1960")
+#Men
+working_df   %>%
+  filter(GEVS==1 & years_retirement==0)  %>% 
+  mutate(cohort_plot = ifelse(GBJAVS>=1922 & GBJAVS<=1940, 1,
+                       ifelse(GBJAVS>=1941 & GBJAVS<=1945, 2,
+                       ifelse(GBJAVS>=1946 & GBJAVS<=1950, 3, 
+                       4))),
+         age=ifelse(age_years>66,10000,age_years)) %>%
+  group_by(cohort_plot, age) %>%
+  summarize(n = n()) %>%
+  mutate(share = (n/sum(n)) * 100) %>%
+  ggplot(aes(x=cohort_plot, y=share)) +
+  geom_col(aes(fill = as.factor(age))) +
+  geom_text(aes(x=cohort_plot, y=share, label=ifelse(share>4,round(share,1),""), group=as.factor(age)), 
+            position=position_stack(vjust = 0.5), size=3)+
+  labs(title = "", caption ="
+Notes: 1/. The plot considers recipients of all types of pensions, except for reduced-
+earning capacity pensions (EM-Rente). 2/.The estimate for the birth cohort 1951-
+1960 is biased because it includes censored cases. In other words, workers who
+were born after 1955 and have therefore not reached the SRA yet. 
+Source: SOEP-RV (2020).", y="% of men", x="Birth cohort", fill="Retirement age") +
+  scale_fill_brewer(labels=legend_labels, 
+                    palette="Blues") +
+  scale_x_continuous(breaks=seq(1,4,1), 
+                     labels=cohort_labels) +
+  theme_classic() + 
+  theme(plot.caption = element_text(hjust=0))
+
+```
+
+#### Descriptive event-study plots
+
+@fig-desc1 provides a descriptive plot illustrating the average SWL by age and type of worker, considering the following categories: not retired until age 70, retired early (ages 60-64), and retired regularly (ages 65+). The first group shows a relatively stable trajectory of average SWL from ages 60 to 65. There is a noticeable increase upon reaching 65, followed by a decline at 66 and 67. Thereafter, there is an upward trend, although not highly pronounced. In contrast, the group of workers who retired early (between ages 60-64) exhibits a constant increase in their average SWL from ages 60 to 64, which coincides with the period in which early retirees exit the labor market. After that, the trajectory of the average SWL remains mostly stable until 70. Conversely, workers who retired regularly (after reaching 65 years of age) demonstrate an upward trend in their average SWL between ages 62-64. Additionally, there is a significant increase in average SWL after age 65. This coincides with the period in which this group transitions to retirement. Notably, after age 65, the group of workers who retired regularly is the one that exhibits the highest average SWL among the three groups.
+
+Although this information is useful, workers retire at different ages, especially if they retire early. Moreover, one of the objectives of this investigation is to identify differences in the impact of retirement on well-being by gender. For these reasons, @fig-desc2 presents a descriptive event-study plot that analyzes the evolution of the average SWL three years before and after retirement by gender. Logically, this figure omits the comparison group (workers who did not retire until 70). Throughout the entire period of analysis, women and men's average SWL show very similar trends. Before retirement, the average SWL is somewhat stable for both groups, ranging around 7.3 and 7.4. However, one year after entering retirement, there is a substantial rise of almost 0.2 in the average SWL for women and men. Two years after retirement, SWL decreases slightly, even though it remains between 7.5 and 7.6. Three years after retiring, men show a slightly higher average SWL than women, even though the difference is not statistically significant.
+
+```{r, echo=F}
+#| label: fig-desc1
+#| fig-cap: "Average SWL between 60 and 70 years by type of worker"
+
+working_df %>%
+  mutate(types_retired=ifelse(is.na(early_retirement), "Not retired until age 70", 
+                       ifelse(early_retirement==1, "Retired early (60-64)", 
+                              "Retired regularly (65+)")),
+          retired_d=ifelse(types_retired=="Never retired",
+                               "Never retired", 
+                               "Retired"),
+          types_retired=factor(types_retired, 
+                                levels = c("Not retired until age 70", 
+                                           "Retired early (60-64)",
+                                           "Retired regularly (65+)"))) %>%
+  group_by(age_years,types_retired) %>%
+  summarize(mean_satisfaction=mean(overall_swl, na.rm=T), 
+            n=n(), 
+            sd=sd(overall_swl, na.rm=T), 
+            se=sd/sqrt(n)) %>%
+  ggplot(aes(x=age_years, y=mean_satisfaction, colour=types_retired)) +
+  geom_point(na.rm=T) +
+  geom_line() +
+  labs(title = "", caption =
+"Note: The overall SWL is reported on a scale from 0 (complete dissatisfaction) to 10
+(complete satisfaction). Number of observations per type of worker: not retired until
+age 70 (4,542), retired early (9,674), and retired regularly (6,270). 
+Source: SOEP-RV (2020).", y="Average satisfaction with life", x="Age", color="Type of worker") +
+  scale_y_continuous(limits=c(7,7.7),
+                     breaks=seq(7,7.7,0.1))  +
+  scale_x_continuous(breaks=seq(60,70,1)) +
+  theme_bw() +
+  theme(plot.caption = element_text(hjust=0))
+
+```
+
+```{r, echo=F}
+#| label: fig-desc2
+#| fig-cap: "Average SWL three years before and after retirement (by gender)"
+
+working_df %>%
+  filter(years_retirement>=-3 & years_retirement<=3) %>%
+  group_by(GEVS,years_retirement) %>%
+  summarize(mean_satisfaction=mean(overall_swl, na.rm=T), 
+            n=n(), 
+            sd=sd(overall_swl, na.rm=T), 
+            se=sd/sqrt(n),
+            upper_limit=mean_satisfaction+se,
+            lower_limit=mean_satisfaction-se) %>%
+  ggplot(aes(x=years_retirement, y=mean_satisfaction, colour=factor(GEVS))) +
+  geom_point(na.rm=T) +
+  geom_pointrange(aes(ymin = lower_limit, ymax = upper_limit))+
+  geom_line() +
+  labs(title = "", caption =
+"Notes: 1/.The overall SWL is reported on a scale from 0 (complete dissatisfaction)
+to 10 (complete satisfaction). 2/.The vertical lines crossing each point represent
+the 95% CI. 
+Source: SOEP-RV (2020).", y="Average satisfaction with life", x="Number of years before/after retirement (retirement=0)", color="Gender")+
+  scale_color_manual(labels = c("Men", "Women"), values = c("blue", "red")) +
+  scale_y_continuous(limits=c(7.2,7.7),
+                     breaks=seq(7.2,7.7,0.1))  +
+  scale_x_continuous(breaks=seq(-10,10,1)) +
+  geom_vline(aes(xintercept = 0), linetype = "longdash") + 
+  theme_classic() +
+  theme(plot.caption = element_text(hjust=0))
+
+```
+
+Given that a considerable proportion of workers in the sample retire before reaching the SRA, @fig-desc3 displays the descriptive event-study plot three years before and after retirement, distinguishing between those who entered retirement early and those who retired after the SRA. Two and three years before retirement, the trend for both groups is very similar. Nevertheless, one year before retiring, workers who exited the labor market early experience a considerable decline in their average SWL, while workers who retired after reaching the SRA show a slight increase. One year after entering retirement, the average SWL of the early retirement group increases substantially, from less than 7.3 to 7.5. The group who retired at the regular age also shows an increase in their SWL, but it is only around 0.1 (from 7.5 to 7.6). Two years after retirement, the SWL of the early retirees decreases by around 0.1, while that of those who retired after reaching the SRA remains stable. Three years after retiring, both groups exhibit a slight increase in their average SWL.
+
+```{r, echo=F, warning=F}
+#| label: fig-desc3
+#| fig-cap: "Average SWL three years before and after retirement (by early retired)"
+
+
+working_df %>%
+  filter(!is.na(early_retirement)) %>%
+  filter(years_retirement>=-3 & years_retirement<=3) %>%
+  group_by(early_retirement, years_retirement) %>%
+  summarize(mean_satisfaction=mean(overall_swl, na.rm=T),
+            n=n(), 
+            sd=sd(overall_swl, na.rm=T), 
+            se=sd/sqrt(n),
+            upper_limit=mean_satisfaction+se,
+            lower_limit=mean_satisfaction-se) %>%  
+  ggplot(aes(x=years_retirement, y=mean_satisfaction, colour=factor(early_retirement))) +
+  geom_point(na.rm=T) +
+  geom_pointrange(aes(ymin = lower_limit, ymax = upper_limit), na.rm=T)+
+  geom_line(na.rm=T) +
+  labs(title = "", caption = 
+"Notes: 1/.The overall SWL is reported on a scale from 0 (complete dissatisfaction)
+to 10 (complete satisfaction). 2/.The vertical lines crossing each point represent
+the 95% CI. 
+Source: SOEP-RV (2020).", y="Average satisfaction with life", x="Number of years before/after retirement (retirement=0)", color="Type of retirement")+
+  scale_color_manual(labels = c("Regular",
+                                "Early"), values = c("brown", "darkgreen")) +
+  scale_y_continuous(limits=c(7.1,7.8),
+                     breaks=seq(7.1,7.8,0.1)) +
+  scale_x_continuous(breaks=seq(-10,10,1)) +
+  geom_vline(aes(xintercept = 0), linetype = "longdash") + 
+  theme_classic() +
+  theme(plot.caption = element_text(hjust=0))
+
+```
+
+### Pooled OLS
+
+@tbl-ols-1 presents the results of the pooled OLS estimations for the entire sample. The first column corresponds to the model including the retirement binary indicator and the following covariates: gender, birth cohort, education level, marital status, and place of residence. In this specification, retirement is associated with an average increase of 0.16 in SWL. This estimate is significant at the 99% confidence level. Upon adding the self-reported health status as a control in column 2, the coefficient of interest rises to 0.23. As expected, the health status appears to be a relevant confounder in the relationship between retirement and SWL. After accounting for it in the linear regression, the effect size of retirement increases. These findings provide initial evidence that supports *Hypothesis 1* and *Hypothesis 1a*. Nevertheless, it is important to highlight that these estimates are biased, as there are several time-invariant unobserved variables that could potentially confound the relationship between retirement and life satisfaction. Moreover, individuals can self-select themselves into retirement.
+
+The third and fourth columns of @tbl-ols-1 display the results of the model that distinguishes between early retirees and regular retirees, with employment as the reference category. In the first specification, all covariates are included except for health status. Transitioning to early retirement leads to an average increase of 0.09 in SWL compared to being employed. Meanwhile, transitioning to retirement after reaching the corresponding SRA is associated with an average increase of 0.33 in SWL, compared to the reference category. Both coefficients are significant at the 99% confidence level. These results do not support *Hypothesis 2*, since regular retirees appear to be better off than early ones. The fourth model introduces the self-reported health status as a control variable. The early retirement coefficient increases from 0.09 to 0.019, while the regular retirement coefficient decreases slightly from 0.33 to 0.31. These estimates remain statistically significant at conventional levels.
+
+@tbl-app-1 shows separate pooled OLS regressions by gender, both for the basic model and for the early versus regular retirees. In the first specification, which compares employed and retired individuals, retirement is associated with an average increase of 0.3 in SWL for women and 0.15 for men. This evidence provides initial support for *Hypothesis 3*, suggesting that the overall effect of retirement on SWL is positive, but greater for women than for men. The next two columns present the results for the model comparing the early retired with regular retirees by gender. Women who retire early exhibit an average increase of 0.29 in their SWL compared to employed women. Additionally, for female workers, regular retirement is associated with an average rise of 0.34 in SWL. In contrast, male workers who retire early show an average increase of 0.09 in their SWL; while those who exit the labor market after reaching the SRA present an increase of 0.28 in their SWL. Overall, it appears that both women who retire early and after reaching the SRA exhibit greater improvement in their SWL compared to men, thus supporting *Hypothesis 3*. All coefficients of interest in this table are statistically significant at the 99% level.
+
+\newpage 
+
+```{=tex}
+\begingroup
+\fontsize{10.5pt}{10.5pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-ols-1
+#| tbl-cap: "Pooled OLS estimations"
+
+
+ols_1               <- lm(overall_swl  ~  retirement  + gender + birth_cohort
+                          + education_hs + married + residence,
+                          data = working_df)
+
+ols_2               <- lm(overall_swl  ~   retirement  + gender + birth_cohort
+                          + education_hs + married + residence + self_health, 
+                          data = working_df)
+
+ols_3               <- lm(overall_swl  ~  retired_early  + gender + birth_cohort
+                          + education_hs + married + residence,
+                          data = working_df)
+
+ols_4               <- lm(overall_swl  ~   retired_early  + gender + birth_cohort
+                          + education_hs + married + residence + self_health, 
+                          data = working_df)
+
+
+output_1           <-  tbl_regression(ols_1, 
+                                    label = list(retirement ~ "Retirement",
+                                    gender ~ "Gender", 
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_2           <-  tbl_regression(ols_2, 
+                                    label = list(retirement ~ "Retirement",
+                                    gender ~ "Gender", 
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence", 
+                                    self_health ~ "Self-reported health status")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_3           <-  tbl_regression(ols_3, 
+                                    label = list(retired_early ~ "Early retirement",
+                                    gender ~ "Gender", 
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_4           <-  tbl_regression(ols_4, 
+                                    label = list(retired_early ~ "Early retirement",
+                                    gender ~ "Gender", 
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence", 
+                                    self_health ~ "Self-reported health status")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+
+#Formatting table
+tbl_merge(tbls = list(output_1, output_2, output_3, output_4),
+          tab_spanner = FALSE) %>%
+          modify_header(label="**Variable**", estimate_1="(1)", 
+                        estimate_2="(2)", estimate_3="(1)", 
+                        estimate_4="(2)") %>%
+          modify_table_body(~.x %>%
+                            dplyr::arrange(
+                              row_type == "glance_statistic", 
+                              match(var_label, c("Retirement", "Early retirement",
+                                    "Gender", "Birth cohort", "Education level", 
+                                    "Marital status", "Place of residence", "Self-reported health status")))) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,std.error_4),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels()  %>%
+          as_gt()  %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2), 
+          label =  md("Employed vs. Retired"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_3, estimate_4), 
+          label =  md("Early vs. Regular"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, estimate_4), 
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "*p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left")) 
+
+```
+
+```{=tex}
+\endgroup
+```
+### Fixed-effects
+
+@tbl-fe-1 presents the results of the different FE models, both for the entire panel sample and by gender. The basic model considers the binary retirement indicator, distinguishing between employed and retired. In the regression including all workers, retirement is associated with an average increase of 0.18 in SWL. This result supports *Hypothesis 1*. This effect is consistent when considering only women (coefficient = 0.17) or only men (coefficient = 0.19). All three coefficients are statistically significant at the 99% confidence level. Although both coefficients for women and men are close to the effect for the entire sample, retirement appears to have a slightly larger positive effect on SWL for men than for women, thus not supporting *Hypothesis 3*.
+
+Columns 4, 5 and 6 present the FE models in which the variable of interest is categorical, distinguishing between employed individuals, early retirees, and regular retirees. Entering retirement before the SRA has a substantial positive effect on SWL. Concretely, early retirees present an average increase of 0.22 in their SWL compared to employed individuals. The effect of retiring after reaching the SRA is also positive but of lower magnitude, as the SWL of workers who retire regularly rises only by 0.13 compared to the reference category, on average. These results indicate that early retirement has a larger positive impact on SWL compared to regular retirement, thereby supporting *Hypothesis 2*. The FE estimations by gender show that men who retire early exhibit a larger increase in SWL than women who retire early. Specifically, male early retirees experience a rise of 0.26 in SWL compared to employed men, while the early retirement coefficient for women is 0.19. In both specifications, early retirees enjoy a larger increase in SWL compared to workers who retire after reaching the SRA. These findings provide initial evidence that does not support *Hypothesis 3*. The coefficients from these specifications are significant at conventional levels.
+
+The last three columns of the table present the FE models that determine whether retirement has lasting positive effects on self-reported life satisfaction. In these specifications, the variable of interest is a categorical one, which compares the recently retired (less than 2 years) and those retired for more than 2 years with the employed, who serve as the reference category. Being retired for 2 years or less is associated with an average increase of 0.18 in SWL compared to being employed. Moreover, being in retirement for more than 2 years leads to an average increase of 0.17 in SWL compared to the reference category. These findings suggest that, for workers in Germany, retirement has lasting positive effects, and thus *Hypothesis 5* is not supported. The separate FE models by gender provide evidence indicating that the long-term positive effects of retirement are stronger for men than for women. Specifically, women who recently retired exhibit an average increment in their SWL of 0.18 compared to employed women; which is significantly higher than the coefficient associated with female workers who have been retired for more than 2 years (0.11). The recently retired coefficient is statistically significant at the 99% confidence level, while the retired for more than 2 years is only significant at the 90% level. Conversely, being a recently retired male worker causes an average increase of 0.19 in SWL; while being in retirement for more than 2 years leads to an increase of 0.24 in SWL, on average. Both coefficients are significant at the 99% confidence level. The estimates indicate a lasting positive effect of retirement for both women and men. However, while the positive impact of retirement on SWL for women appears to decrease with time, men show an even larger increase in SWL more than 2 years after retirement. Given the larger positive effect of retirement for men compared to women in these specifications, *Hypothesis 3* is again not supported.
+
+@tbl-app-2 in the Appendix shows the results of all FE models including the self-reported health status as a covariate. In the basic model (employed versus retired), the coefficients of interest are very close to the ones from the model without controls, but the effect sizes decrease by 0.01 for the entire sample and for both women and men. This suggests that accounting for the self-reported health status did not increase the magnitude of the coefficient of interest, and thus *Hypothesis 1a* is not supported.
+
+In summary, the results from the FE models confirm that retirement has a positive impact on SWL. The FE estimations deal with the unobserved time-invariant heterogeneity at the individual level, and as such, factors such as personality traits, motivation, occupational characteristics of the worker, among others, are accounted for. In this sense, these estimates present less possible sources of bias compared to the pooled OLS estimations, and address the issue of self-selection into retirement. In general, the impact of retirement on SWL does not appear to be consistently greater in magnitude compared to the OLS estimations, and thus *Hypothesis 4* is not be supported. In this regard, it is important to consider that there could potentially be other time-variant variables that confound the relationship between retirement and life satisfaction. However, the positive and significant effect of retirement on SWL remains. Moreover, the impact appears to be greater for early retirees, men, and does no seem to disappear even after more than 2 years in retirement.
+
+```{=tex}
+\begingroup
+\fontsize{8.25pt}{8.25pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-fe-1
+#| tbl-cap: "Fixed-effects estimations"
+
+
+fe_1            <- plm(overall_swl  ~  retirement,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_2            <- plm(overall_swl  ~  retirement,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+
+fe_3            <- plm(overall_swl  ~  retirement,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_4            <- plm(overall_swl  ~  retired_early,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_5            <- plm(overall_swl  ~  retired_early,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_6            <- plm(overall_swl  ~  retired_early,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_7            <- plm(overall_swl  ~  retired_categories,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_8            <- plm(overall_swl  ~  retired_categories,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_9            <- plm(overall_swl  ~  retired_categories,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+
+
+output_fe_1     <-  tbl_regression(fe_1, 
+                                    label = list(retirement ~ "Retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_2     <-  tbl_regression(fe_2, 
+                                    label = list(retirement ~ "Retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_3     <-  tbl_regression(fe_3, 
+                                    label = list(retirement ~ "Retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_4     <-  tbl_regression(fe_4, 
+                                    label = list(retired_early ~ "Early retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_5     <-  tbl_regression(fe_5, 
+                                    label = list(retired_early ~ "Early retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_6     <-  tbl_regression(fe_6, 
+                                    label = list(retired_early ~ "Early retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_7     <-  tbl_regression(fe_7, 
+                                    label = list(retired_categories ~ "Time retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_fe_8     <-  tbl_regression(fe_8, 
+                                    label = list(retired_categories ~ "Time retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_9     <-  tbl_regression(fe_9, 
+                                    label = list(retired_categories ~ "Time retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+#Formatting table
+
+tbl_merge(tbls = list(output_fe_1, output_fe_2, output_fe_3, 
+                      output_fe_4, output_fe_5, output_fe_6, 
+                      output_fe_7, output_fe_8, output_fe_9), 
+          tab_spanner = FALSE)%>%
+          modify_header(label="**Variable**",
+                        estimate_1="All",  estimate_2="Women", 
+                        estimate_3="Men",  estimate_4="All",
+                        estimate_5="Women", estimate_6="Men", 
+                        estimate_7="All", estimate_8="Women", 
+                        estimate_9="Men") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4, std.error_5,std.error_6,
+                     std.error_7, std.error_8,std.error_9),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3),
+          label =  md("Employed vs. Retired"),
+          gather = FALSE, 
+          level = 2)  %>%
+          gt::tab_spanner(
+          columns = c(estimate_4, estimate_5, estimate_6),
+          label =  md("Early vs. Regular"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_7, estimate_8, estimate_9),
+          label =  md("Long-term effects"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5, estimate_6, 
+                      estimate_7, estimate_8, estimate_9),
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "*p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left")) %>%
+          rows_add(
+            label = "Individual FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )  %>%
+          rows_add(
+            label = "Age FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )
+
+
+```
+
+```{=tex}
+\endgroup
+```
+### Regression Discontinuity
+
+@tbl-rdd-1 presents the results of the initial regression discontinuity estimations, considering linear models with different slopes. The first column depicts the jump in the probability of receiving the regular old-age pension upon reaching the corresponding SRA. The first stage indicates a 62% increase in the probability of being retired for workers who are older than the SRA. The sharp columns indicate the increase in the average SWL for workers who are eligible for retirement (older than the SRA). These are the reduced-form estimates, as they do not distinguish whether individuals actually transitioned to retirement after becoming eligible. Hence, they represent the intent-to-treat (ITT) effects. The first sharp model indicates that workers past the SRA exhibit an average increase of 0.19 in SWL. This coefficient is statistically significant at the 99% confidence level. Additionally, after incorporating sociodemographic controls in the regression, the positive effect associated with being eligible for retirement decreases to 0.13. This coefficient is significant at the 95% level. The result of the initial sharp model without covariates is illustrated in @fig-rdd-1. As can be seen, being older than the SRA is associated with higher values of self-reported SWL.
+
+```{r, echo=F}
+#| label: fig-rdd-1
+#| fig-cap: "Average SWL by regular pension eligibility"
+
+working_df_b1 %>%
+  ungroup %>% 
+  mutate(`Retired` = ifelse(Z1 >= 0, "Eligible", "Non-eligible")) %>% 
+  ggplot(aes(x = Z1, y = overall_swl, group=`Retired`, color=`Retired`)) +
+  geom_point(data= working_df_b1 %>% 
+              ungroup %>% 
+              group_by(Z1) %>% 
+              summarize(overall_swl = mean(overall_swl),
+                        num_obs = n()),
+             aes(x = Z1, y=overall_swl, size=num_obs), alpha=0.15, inherit.aes=F) +
+  geom_smooth(method="lm") +
+  scale_color_manual(values=c("black", "darkgrey")) +
+  geom_vline(xintercept=0, linetype="dashed", alpha=.7) +
+  scale_x_continuous(breaks=seq(-60,60,20), 
+                     limits=c(-60,60)) +
+  theme_classic() +
+  labs(x = "Age minus SRA (in months)", y="", caption="
+Notes: 1/. The dots show average values of the outcome, self-reported overall life
+satisfaction, within small population bins. 2/. The lines are linear regressions fit
+on each side of the threshold. 3/.The plot considers a bandwidth of 60 months before
+and after reaching the SRA. 4/.Observations located to the right side of the cutoff 
+line are eligible  for the regular pension.
+Source: SOEP-RV (2020).") +
+  guides(color=FALSE, size = FALSE) + 
+    theme(plot.caption = element_text(hjust=0))
+```
+
+The two fuzzy columns display the results of the 2SLS model, in which the eligibility indicator serves as an instrumental variable (IV) for the first stage, and the predicted values from the initial estimation are utilized for the second stage. In this sense, these estimates represent the local average treatment effect (LATE) for the subset of workers who retire after reaching the SRA. In column 1, being older than the SRA and transitioning to retirement causes an average increase of 0.31 in SWL. This estimate is statistically significant at the 99% level. The effect size decreases to 0.21 after adding the sociodemographic covariates, but the statistical significance remains. Overall, these results indicate once more that retirement leads to a substantial increase in self-reported SWL. The results are robust even after adding sociodemographic control variables, though the magnitude of the coefficients decrease. These findings provide additional evidence supporting *Hypothesis 1*. It is important to highlight that these results apply specifically to workers who retire regularly.
+
+```{=tex}
+\begingroup
+\fontsize{11pt}{11pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-rdd-1
+#| tbl-cap: "RDD estimations (default bandwidth)"
+
+
+first_stage          <- lm(retired  ~ 
+                             Z1 + eligibleZ1 + interaction_EZ1, 
+                             data =  working_df_rdd)
+
+rdd_1                <- lm(overall_swl  ~ 
+                             Z1 + eligibleZ1 + interaction_EZ1,
+                             data =  working_df_rdd)
+
+rdd_2                <- lm(overall_swl ~ 
+                                  eligibleZ1 + Z1 + interaction_EZ1 +
+                                  gender + education_hs + self_health + married +
+                                  residence, 
+                                  data=working_df_rdd)
+
+rdd_3                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1   + Z1 + interaction_EZ1, 
+                                  data=working_df_rdd)
+
+
+rdd_4                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  gender + education_hs + self_health + married +
+                                  residence | 
+                                  eligibleZ1   + Z1 + interaction_EZ1 +
+                                  gender + education_hs + self_health + married +
+                                  residence, 
+                                  data=working_df_rdd)
+
+
+
+output_1st_stage    <- tbl_regression(first_stage, 
+                                    label = list(eligibleZ1 ~ "Eligible (older than the SRA)"), 
+                                    include = c("eligibleZ1")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_rdd_1        <- tbl_regression(rdd_1, 
+                                    label = list(eligibleZ1 ~ "Eligible (older than the SRA)"), 
+                                    include = c("eligibleZ1")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_rdd_2        <- tbl_regression(rdd_2, 
+                                    label = list(eligibleZ1 ~ "Eligible (older than the SRA)"), 
+                                    include = c("eligibleZ1")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_3        <- tbl_regression(rdd_3, 
+                                    label = list(retired ~ "Retirement"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_4        <- tbl_regression(rdd_4, 
+                                    label = list(retired ~ "Retirement"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+
+
+#Formatting table
+
+tbl_merge(tbls = list(output_1st_stage, output_rdd_1, output_rdd_2, output_rdd_3,
+                      output_rdd_4), 
+          tab_spanner = FALSE)%>%
+          modify_header(label="**Variable**", estimate_1="(1)", 
+                        estimate_2="(1)", estimate_3="(2)", estimate_4 ="(1)", 
+                        estimate_5="(2)") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4, std.error_5),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1),
+          label =  md("Recipient"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_2, estimate_3),
+          label =  md("Sharp"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_4, estimate_5),
+          label =  md("Fuzzy (2SLS)"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1),
+          label =  md("**First stage**"),
+          gather = FALSE, 
+          level = 3) %>%
+          gt::tab_spanner(
+          columns = c(estimate_2, estimate_3, estimate_4, 
+                      estimate_5),
+          label =  md("**Dependent variable: SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "Notes: 1/. Regression discontinuity estimates were constructed using linear regressions with different slopes. 2/. Sharp estimates represent intent-to-treat effects of retirement for workers older than the SRA; while fuzzy estimates represent the local average treatment effects for the subset of compliers (workers who reach the SRA and retire). 3/. Covariates include: gender, education level, self-reported health status, marital status, and place of residence. 4/. All estimations consider the default bandwidth of 86 months to the left side of the cutoff and 67 months to the right side. 5/. The estimations utilize unbalanced panel data as cross-section. *p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left"))  %>%
+          rows_add(
+            label = "Covariates",
+            estimate_1 = "No", 
+            estimate_2 = "No", 
+            estimate_3 = "Yes",
+            estimate_4 = "No", 
+            estimate_5 = "Yes",
+          ) 
+
+
+```
+
+```{=tex}
+\endgroup
+```
+@tbl-app-2 presents the results of the fuzzy RDD estimations by gender. Before including the control variables, retirement causes an average increase of 0.35 in SWL for women. The effect size decreases to 0.26 after adding covariates, though both estimates are statistically significant at conventional levels. For men, retirement leads to an increase of 0.27 in SWL. After including covariates, the effect is still positive but of lower magnitude (coefficent = 0.16). The first estimate is statistically significant at the 90% confidence level, while the second one is not, though this is probably related to a lack of statistical power due to lower sample sizes. These findings suggest that women are better off after retirement compared to men, and thus support *Hypothesis 3*. The fuzzy RDD is a more appropriate method to estimate the causal effect of retirement on SWL, as it addresses the self-selection of workers into retirement by exploiting the exogenous SRA cutoffs. Compared to the pooled OLS estimations, the models without covariates show consistently larger positive effects, though after adding controls the effect sizes are very similar to those from the linear regressions. In this regard, *Hypothesis 4* is not supported.
+
+Across all methods and specifications, the main finding remains unchanged: retirement causes an increase in SWL. Moreover, FE regressions suggest that workers who retire early experience greater improvements in SWL compared to those who retire regularly. Additionally, the positive effect of retirement appears to be larger for women than for men, according to the OLS and RD estimations, while the FE models suggest that men benefit more from retirement. Furthermore, retirement seems to have a lasting positive effect on self-reported life satisfaction. @fig-coefplot-1 summarizes the main estimates from all models in three different coefficient plots.
+
+```{r, echo=F}
+#| label: fig-coefplot-1
+#| fig-cap: "Effect of retirement on SWL (Pooled OLS, FE and RDD)"
+#| fig-subcap: 
+#|   - "OLS (all controls)"
+#|   - "FE (no controls)"
+#|   - "RDD (all controls)"
+#| layout: "[[50,50], [-25,50,-25]]"
+
+
+#Running models that are part of the appendix
+ols_women_1        <- lm(overall_swl  ~ retirement + birth_cohort + 
+                          education_hs + married + residence + self_health,
+                          data = working_df_women)
+
+ols_men_1          <- lm(overall_swl  ~ retirement + birth_cohort
+                          + education_hs + married + residence + self_health, 
+                          data = working_df_men)
+
+
+rdd_women_2        <- iv_robust(overall_swl ~ 
+                                retired + Z1 + interaction_EZ1 +
+                                education_hs + self_health + married +
+                                residence | 
+                                eligibleZ1   + Z1 + interaction_EZ1 +
+                                education_hs + self_health + married +
+                                residence, 
+                                data=working_df_rdd_women)
+
+
+rdd_men_2          <- iv_robust(overall_swl ~ 
+                                retired + Z1 + interaction_EZ1 +
+                                education_hs + self_health + married +
+                                residence | 
+                                eligibleZ1   + Z1 + interaction_EZ1 +
+                                education_hs + self_health + married +
+                                residence, 
+                                data=working_df_rdd_men)
+
+
+#Exporting coefficients to a df
+#OLS
+ols_1_output         <- as.data.frame(ols_2$coef)
+ols_2_output         <- as.data.frame(ols_4$coef)
+ols_3_output         <- as.data.frame(ols_women_1$coef)
+ols_4_output         <- as.data.frame(ols_men_1$coef)
+
+#FE
+fe_1_output          <- as.data.frame(fe_1$coef)
+fe_2_output          <- as.data.frame(fe_2$coef)
+fe_3_output          <- as.data.frame(fe_3$coef)
+fe_4_output          <- as.data.frame(fe_4$coef)
+fe_7_output          <- as.data.frame(fe_7$coef)
+
+#RDD
+rdd_1_output         <- as.data.frame(rdd_2$coef)
+rdd_2_output         <- as.data.frame(rdd_4$coef)
+rdd_3_output         <- as.data.frame(rdd_women_2$coef) 
+rdd_4_output         <- as.data.frame(rdd_men_2$coef)
+
+
+names(ols_1_output)  <- "coef"
+names(ols_2_output)  <- "coef"
+names(ols_3_output)  <- "coef"
+names(ols_4_output)  <- "coef"
+names(fe_1_output)   <- "coef"
+names(fe_2_output)   <- "coef"
+names(fe_3_output)   <- "coef"
+names(fe_4_output)   <- "coef"
+names(fe_7_output)   <- "coef"
+names(rdd_1_output)  <- "coef"
+names(rdd_2_output)  <- "coef"
+names(rdd_3_output)  <- "coef"
+names(rdd_4_output)  <- "coef"
+
+ 
+#Coef names
+coefnames                <- rownames(ols_1_output)
+rownames(ols_1_output)   <- NULL
+ols_1_output             <- cbind(coefnames, ols_1_output)
+
+coefnames                <- rownames(ols_2_output)
+rownames(ols_2_output)   <- NULL
+ols_2_output             <- cbind(coefnames, ols_2_output)
+
+coefnames                <- rownames(ols_3_output)
+rownames(ols_3_output)   <- NULL
+ols_3_output             <- cbind(coefnames, ols_3_output)
+
+coefnames                <- rownames(ols_4_output)
+rownames(ols_4_output)   <- NULL
+ols_4_output             <- cbind(coefnames, ols_4_output)
+
+coefnames                <- rownames(fe_1_output)
+rownames(fe_1_output)    <- NULL
+fe_1_output              <- cbind(coefnames, fe_1_output)
+
+coefnames                <- rownames(fe_2_output)
+rownames(fe_2_output)    <- NULL
+fe_2_output              <- cbind(coefnames, fe_2_output)
+
+coefnames                <- rownames(fe_3_output)
+rownames(fe_3_output)    <- NULL
+fe_3_output              <- cbind(coefnames, fe_3_output)
+
+coefnames                <- rownames(fe_4_output)
+rownames(fe_4_output)    <- NULL
+fe_4_output              <- cbind(coefnames, fe_4_output)
+
+coefnames                <- rownames(fe_7_output)
+rownames(fe_7_output)    <- NULL
+fe_7_output              <- cbind(coefnames, fe_7_output)
+
+coefnames                <- rownames(rdd_1_output)
+rownames(rdd_1_output)   <- NULL
+rdd_1_output             <- cbind(coefnames, rdd_1_output)
+
+coefnames                <- rownames(rdd_2_output)
+rownames(rdd_2_output)   <- NULL
+rdd_2_output             <- cbind(coefnames, rdd_2_output)
+
+coefnames                <- rownames(rdd_3_output)
+rownames(rdd_3_output)   <- NULL
+rdd_3_output             <- cbind(coefnames, rdd_3_output)
+
+coefnames                <- rownames(rdd_4_output)
+rownames(rdd_4_output)   <- NULL
+rdd_4_output             <- cbind(coefnames, rdd_4_output)
+
+
+#Obtaining se
+out_1                  <- summary(ols_2)
+ols_1_output$se        <- out_1$coefficients[,2]
+
+out_2                  <- summary(ols_4)
+ols_2_output$se        <- out_2$coefficients[,2]
+
+out_3                  <- summary(ols_women_1)
+ols_3_output$se        <- out_3$coefficients[,2]
+
+out_4                  <- summary(ols_men_1)
+ols_4_output$se        <- out_4$coefficients[,2]
+
+out_5                  <- summary(fe_1)
+fe_1_output$se         <- out_5$coefficients[,2]
+
+out_6                  <- summary(fe_2)
+fe_2_output$se         <- out_6$coefficients[,2]
+
+out_7                  <- summary(fe_3)
+fe_3_output$se         <- out_7$coefficients[,2]
+
+out_8                  <- summary(fe_4)
+fe_4_output$se         <- out_8$coefficients[,2]
+
+out_9                  <- summary(fe_7)
+fe_7_output$se         <- out_9$coefficients[,2]
+
+out_10                 <- summary(rdd_2)
+rdd_1_output$se        <- out_10$coefficients[,2]
+
+out_11                 <- summary(rdd_4)
+rdd_2_output$se        <- out_10$coefficients[,2]
+
+out_12                 <- summary(rdd_women_2)
+rdd_3_output$se        <- out_12$coefficients[,2]
+
+out_13                 <- summary(rdd_men_2)
+rdd_4_output$se        <- out_13$coefficients[,2]
+
+
+# Lower bound
+ols_1_output$L         <- ols_1_output$coef - 1.96*ols_1_output$se
+ols_2_output$L         <- ols_2_output$coef - 1.96*ols_2_output$se
+ols_3_output$L         <- ols_3_output$coef - 1.96*ols_3_output$se
+ols_4_output$L         <- ols_4_output$coef - 1.96*ols_4_output$se
+
+fe_1_output$L          <- fe_1_output$coef - 1.96*fe_1_output$se
+fe_2_output$L          <- fe_2_output$coef - 1.96*fe_2_output$se
+fe_3_output$L          <- fe_3_output$coef - 1.96*fe_3_output$se
+fe_4_output$L          <- fe_4_output$coef - 1.96*fe_4_output$se
+fe_7_output$L          <- fe_7_output$coef - 1.96*fe_7_output$se
+
+rdd_1_output$L         <- rdd_1_output$coef - 1.96*rdd_1_output$se
+rdd_2_output$L         <- rdd_2_output$coef - 1.96*rdd_2_output$se
+rdd_3_output$L         <- rdd_3_output$coef - 1.96*rdd_3_output$se
+rdd_4_output$L         <- rdd_4_output$coef - 1.96*rdd_4_output$se
+
+# Upper bound
+ols_1_output$U         <- ols_1_output$coef + 1.96*ols_1_output$se
+ols_2_output$U         <- ols_2_output$coef + 1.96*ols_2_output$se
+ols_3_output$U         <- ols_3_output$coef + 1.96*ols_3_output$se
+ols_4_output$U         <- ols_4_output$coef + 1.96*ols_4_output$se
+
+fe_1_output$U          <- fe_1_output$coef + 1.96*fe_1_output$se
+fe_2_output$U          <- fe_2_output$coef + 1.96*fe_2_output$se
+fe_3_output$U          <- fe_3_output$coef + 1.96*fe_3_output$se
+fe_4_output$U          <- fe_4_output$coef + 1.96*fe_4_output$se
+fe_7_output$U          <- fe_7_output$coef + 1.96*fe_7_output$se
+
+rdd_1_output$U         <- rdd_1_output$coef + 1.96*rdd_1_output$se
+rdd_2_output$U         <- rdd_2_output$coef + 1.96*rdd_2_output$se
+rdd_3_output$U         <- rdd_3_output$coef + 1.96*rdd_3_output$se
+rdd_4_output$U         <- rdd_4_output$coef + 1.96*rdd_4_output$se
+
+
+#Renaming coefficients and rearranging everything
+#Pooled OLS
+ols_1_output           <- ols_1_output %>%
+                          filter(coefnames=="retirementRetired") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retirementRetired", 
+                          "Retirement", ""))
+
+ols_2_output           <- ols_2_output %>%
+                          filter(coefnames=="retired_earlyRetired early" | 
+                                 coefnames=="retired_earlyRetired after SRA") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retired_earlyRetired early", "Early retirement",
+                          ifelse(coefnames=="retired_earlyRetired after SRA", 
+                          "Regular retirement","")))
+
+ols_3_output           <- ols_3_output %>%
+                          filter(coefnames=="retirementRetired") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retirementRetired", 
+                          "Retirement (women)", ""))
+
+ols_4_output           <- ols_4_output %>%
+                          filter(coefnames=="retirementRetired") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retirementRetired", 
+                          "Retirement (men)", ""))
+
+#FE
+fe_1_output            <- fe_1_output %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retirementRetired", 
+                          "Retirement", ""))
+
+
+fe_2_output            <- fe_2_output %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retirementRetired", 
+                          "Retirement (women)", ""))
+
+fe_3_output            <- fe_3_output %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retirementRetired", 
+                          "Retirement (men)", ""))
+
+fe_4_output            <- fe_4_output  %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retired_earlyRetired early", "Early retirement",
+                          ifelse(coefnames=="retired_earlyRetired after SRA", 
+                          "Regular retirement","")))
+
+fe_7_output            <- fe_7_output %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retired_categoriesRecently retired", 
+                          "Recently retired (<=2 yrs)",
+                          ">2 years retired"))
+
+rdd_1_output           <- rdd_1_output %>%
+                          filter(coefnames=="eligibleZ1") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="eligibleZ1", 
+                          "Eligible (older than SRA)", ""))
+
+rdd_2_output           <- rdd_2_output %>%
+                          filter(coefnames=="retired") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retired", 
+                          "Retirement", ""))
+
+rdd_3_output           <- rdd_3_output %>%
+                          filter(coefnames=="retired") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retired", 
+                          "Retirement (women)", ""))
+
+rdd_4_output           <- rdd_4_output %>%
+                          filter(coefnames=="retired") %>%
+                          mutate(coefnames=ifelse(
+                          coefnames=="retired", 
+                          "Retirement (men)", ""))
+
+
+
+plot_ols                 <- bind_rows(ols_1_output, ols_2_output, 
+                                      ols_3_output, ols_4_output) 
+
+plot_ols$coefnames       <- factor(plot_ols$coefnames, 
+                                   levels=c("Retirement",
+                                            "Retirement (women)", 
+                                            "Retirement (men)", 
+                                            "Early retirement", 
+                                            "Regular retirement"))
+
+
+plot_fe                  <- bind_rows(fe_1_output, fe_2_output, fe_3_output,
+                                      fe_4_output, fe_7_output) 
+
+plot_fe$coefnames        <- factor(plot_fe$coefnames, 
+                                   levels=c("Retirement",
+                                            "Retirement (women)", 
+                                            "Retirement (men)", 
+                                            "Early retirement", 
+                                            "Regular retirement", 
+                                            "Recently retired (<=2 yrs)", 
+                                            ">2 years retired"))
+
+
+plot_rdd                 <- bind_rows(rdd_1_output, rdd_2_output, 
+                                      rdd_3_output, rdd_4_output) 
+        
+plot_rdd$coefnames       <- factor(plot_rdd$coefnames, 
+                                   levels=c("Eligible (older than SRA)",
+                                            "Retirement", 
+                                            "Retirement (women)", 
+                                            "Retirement (men)"))
+
+#Plot 1 - OLS
+ggplot(plot_ols, aes(x = coef, y = fct_rev(coefnames))) +
+ geom_errorbarh(aes(xmax = U, xmin = L), height=.2)+
+ geom_point(size = 1.5) +
+ scale_x_continuous(limits=c(0,0.4)) +
+ geom_hline(yintercept = 2.5, linetype="dotted") +
+ geom_hline(yintercept = 3.5, linetype="dotted") +
+ geom_hline(yintercept = 4.5, linetype="dotted") +
+ ylab("")+
+ xlab("Cofficients") +
+ theme_bw()
+
+#Plot 2 - FE
+ggplot(plot_fe, aes(x = coef, y = fct_rev(coefnames))) +
+ geom_errorbarh(aes(xmax = U, xmin = L), height=.2)+
+ geom_point(size = 1.5) +
+ scale_x_continuous(limits=c(0,0.4)) +
+ geom_hline(yintercept = 2.5, linetype="dotted") +
+ geom_hline(yintercept = 4.5, linetype="dotted") +
+ geom_hline(yintercept = 5.5, linetype="dotted") +
+ geom_hline(yintercept = 6.5, linetype="dotted") +
+ ylab("")+
+ xlab("Cofficients") +
+ theme_bw()
+
+#Plot 3 - RDD
+ggplot(plot_rdd, aes(x = coef, y = fct_rev(coefnames))) +
+ geom_errorbarh(aes(xmax = U, xmin = L), height=.2)+
+ geom_point(size = 1.5) +
+ scale_x_continuous(limits=c(-0.2,0.6)) +
+ geom_vline(xintercept=0, linetype = "dashed") +
+ geom_hline(yintercept = 1.5, linetype="dotted") +
+ geom_hline(yintercept = 2.5, linetype="dotted") +
+ geom_hline(yintercept = 3.5, linetype="dotted") +
+ ylab("")+
+ xlab("Cofficients") +
+ theme_bw()
+
+```
+
+## Robustness
+
+### Fixed-effects
+
+#### Different sample selection
+
+The initial sample selection for the FE models includes individuals who had not yet reached the SRA by 2020. To focus solely on workers who have had the opportunity to retire regularly, @tbl-app-4 presents the FE specifications with a different sample selection, excluding all workers born after 1955 from the analytical sample. This selection ensures that only workers who had reached at least age 65 by 2020, the final year of data collection of the SOEP-RV, are retained in the sample. After dropping 2,618 panel observations, the main findings remain unchanged.
+
+#### Lagged SWL
+
+@tbl-app-5 explicitly models temporal autocorrelation in the data by including the lagged value of the dependent variable (last observation) as an additional control. This form of dynamic autoregressive modeling yields highly similar results to the main models from @tbl-fe-1. The most noticeable difference is that women who retire early do not benefit more from retirement compared to women who retire after reaching the SRA. However, the model including all observations still shows a higher effect for early retirees compared to regular retirees.
+
+### Regression Discontinuity
+
+#### Different bandwidth selections
+
+To assess the robustness of results from the fuzzy RD specifications under different bandwidth selections, @tbl-app-6 presents four different sets of observations around the cutoff: 60 months, 48 months, 36 months, and 24 months. Across all bandwidth selections, the positive impact of retirement on life satisfaction remains consistent. However, after including control variables in all four different specifications, the effect sizes decrease, and the statistical significance disappears. This could potentially be attributed to the smaller sample sizes associated with narrower bandwidths.
+
+#### Non-parametric estimations
+
+One disadvantage of the results presented in @tbl-rdd-1 is that the models assume a linear functional form for the data. To address this limitation, @tbl-app-7 displays non-parametric fuzzy RDD estimations for the entire sample and by gender. This analysis was conducted using the *rdrobust* package in R [@Calonico2015b]. The bias-corrected estimate for the overall sample shows an average increase of 0.74 in SWL for workers who retire upon reaching the SRA, which is significantly higher than the results from the 2SLS linear specifications in @tbl-rdd-1. Interestingly, the non-parametric estimations reveal that men (coefficient = 0.6) benefit more from retirement compared to women (coefficient = 0.44). Hence, the previous result indicating that *Hypothesis 3* was supported does not hold. @fig-rdd-2 plots the results of the non-parametric estimations based on the procedure developed by @Calonico2015a.
+
+```{r, include=F}
+
+plot_1 <- rdplot(y=working_df_b1$overall_swl,
+          # y.lim=c(7,14),
+          # x.lim=c(-5,5),
+          x=working_df_b1$Z1,
+          scale=1,
+          x.label="Age minus SRA (in months)",
+          y.label="Average SWL",
+          title="",
+          col.dots='Gray', col='black', 
+          masspoints="off") 
+
+
+plot_2 <- rdplot(y=working_df_b1_women$overall_swl,
+          # y.lim=c(7,14),
+          # x.lim=c(-5,5),
+          x=working_df_b1_women$Z1,
+          scale=1,
+          x.label="Age minus SRA (in months)",
+          y.label="Average SWL",
+          title="",
+          col.dots='Gray', col='red', 
+          masspoints="off") 
+
+
+plot_3 <- rdplot(y=working_df_b1_men$overall_swl,
+          # y.lim=c(7,14),
+          # x.lim=c(-5,5),
+          x=working_df_b1_men$Z1,
+          scale=1,
+          x.label="Age minus SRA (in months)",
+          y.label="Average SWL",
+          title="",
+          col.dots='Gray', col='blue', 
+          masspoints="off") 
+
+```
+
+```{r, echo=F}
+#| label: fig-rdd-2
+#| fig-cap: "Average SWL by regular pension eligibility (non-parametric)"
+#| fig-subcap: 
+#|   - "All"
+#|   - "Women"
+#|   - "Men"
+#| layout: "[[50,50], [-25,50,-25]]"
+
+
+plot_1$rdplot +
+  theme(panel.grid = element_blank(),axis.text = element_text(size = 10))
+
+plot_2$rdplot +
+  theme(panel.grid = element_blank(),axis.text = element_text(size = 10))
+
+plot_3$rdplot +
+  theme(panel.grid = element_blank(),axis.text = element_text(size = 10))
+
+```
+
+#### Manipulation
+
+It is relevant to consider the possibility of manipulation in the running variable. If workers could influence their eligibility status for regular retirement, the continuity assumption of the RDD would be violated, thereby preventing the causal interpretation of the results. However, in the case of age in months, which serves as the running variable, the likelihood of manipulation is minimal. It is improbable that workers in Germany are able to manipulate their age in administrative pension records to accelerate their transition to retirement. The results of the manipulation test, proposed by @Cattaneo2018, further support this claim. @fig-app-1 illustrates the absence of bunching in the distribution of individuals around the SRA cutoff. Moreover, the p-value of the test indicates that the null hypothesis of no sorting is not rejected.
+
+## Limitations
+
+There are several limitations to consider in investigating the causal impact of retirement on life satisfaction. Firstly, the sample selected from the SOEP-RV suffers from selection bias, as it only includes individuals with administrative pension records (i.e., those with a contribution history) who actively agree to have them linked to their SOEP information. Consequently, groups such as women who are not part of or have left the labor force before old age are not included, as well as workers who may not consent to have their data linked.
+
+Concerning the variable selection, the health status is self-reported and could potentially be highly correlated with SWL. Another possibility could have been to use a more objective measure such as physician visits, which is widely utilized in papers that employ the SOEP. Regarding the quasi-experimental methodologies, the FE models do not account for time-variant confounding variables. Particularly, the income level has been found to be a significant determinant of life satisfaction after retirement in several other investigations. Unfortunately, due to time constraints, this variable could not be properly constructed in the present study.
+
+Moreover, while there does not appear to be a violation of the continuity assumption in the RDD, testing the parallel trends assumption (relevant for the FE models) is more challenging. Even with event-study analysis, it would be difficult to demonstrate that the trends would have been parallel in the absence of the treatment. Additionally, a major drawback of the fuzzy RDD is the smaller sample size compared to the FE models due to sample selection. This selection implies that the results from all RDD specifications apply only to a very specific subset of workers who do not retire early, which is the minority in the case of Germany. Consequently, it is not possible to directly compare the estimates from the FE and RDD models, as they come from different methodologies and datasets.
+
+Lastly, mediator analysis is omitted in this research, but it holds significant relevance in the field of retirement studies. There could be many mechanisms that explain why some old-age individuals experience greater happiness after retirement than others. For instance, factors such as the amount of free time, time spent with relatives and friends, and engagement in activities such as traveling or charity work could play crucial roles. It would be interesting to develop a theoretical framework that incorporates such mechanisms and reformulate the hypotheses accordingly. Moderation effects are also relevant. In this case, introducing an interaction term between health status and retirement could have yielded insightful results regarding the well-being of individuals with poorer health after retirement. Furthermore, considering the occupation status before retirement is crucial. @Merz2018 concluded that the initial positive impact of retirement on SWL is absorbed after accounting for the occupational status. While the FE and RDD models address selection issues, a moderation analysis incorporating occupational status would still provide valuable insights.
+
+## Conclusions
+
+This paper analyzes the impact of retirement on SWL for workers in Germany utilizing linked data from the SOEP and the administrative pension records (RV). Although previous studies have used the SOEP for similar purposes, most of them lacked administrative data indicating the exact year of retirement entry and relied solely on self-reporting. Moreover, most of the literature available on the topic of retirement and individual well-being explores the relationship utilizing FE models, overlooking methodologies that more comprehensively address selection issues, such as RDD.
+
+The main finding of this paper is that retirement leads to a substantial increase in self-reported life satisfaction. Moreover, it seems that early retirees show a larger increase in SWL compared to regular retirees. Additionally, the positive effect of retirement appears to be lasting. The differences by gender are not consistent across all models. The FE regressions, considering all types of retirees (early and regular), suggest that men benefit more from retirement compared to women. However, in the RDD, focusing only on regular retirees, women seem to fare better. As such, no definitive conclusion regarding gender differences in retirement's impact on SWL can be drawn.
+
+In a country with an aging population like Germany, the government has already closed a couple early retirement schemes, as most workers tend to take advantage of them. One of the recommendations of this paper is that, while this is necessary for the German public pension system to continue to exist, it must be recognized that early retirement schemes that allow people in poor health to exit the labor market should remain open. Moreover, whatever the age, retirement still has a lasting positive effect on life satisfaction, which is why Germany's current policy of gradually increasing the SRA is supported by the findings of this study.
+
+Future research could focus on studying mediation or moderation effects in the relationship between retirement and individual well-being. Additionally, it would be interesting to investigate the effect of retirement on various self-reported satisfaction variables included in the SOEP, employing the methodologies utilized in this paper. An alternative approach could involve examining the impact of retirement on self-reported life satisfaction among individuals who retire through disability or reduced-earning capacity pensions. This subgroup represents older adults who exit the labor force due to deteriorating health conditions, and as such the impact of retirement could potentially be larger.
+
+The effect of the spouse's retirement on SWL would also represent a significant contribution to the literature. @Muller2018 already found important intra-household spillover effects of retirement on the spouse's health. A future investigation could focus on the impact of the spouse's retirement on SWL, and perform a separate analysis by gender. Finally, it would be important to follow @Merz2018 and include anticipation and adaptation effects in the analysis. According to the author, the belief in a positive effect of retirement on life satisfaction can be misleading if not short and middle term pre- and post-retirement circumstances are considered. Hence, it would be interesting to see if the findings of this paper are robust to such specifications.
+
+\newpage
+
+## References
+
+::: {#refs}
+:::
+
+\newpage
+
+```{=tex}
+\setcounter{section}{0}
+\renewcommand{\thesection}{\Alph{section}}
+
+\setcounter{table}{0}
+\renewcommand{\thetable}{A\arabic{table}}
+
+\setcounter{figure}{0}
+\renewcommand{\thefigure}{A\arabic{figure}}
+```
+## Appendix {.appendix}
+
+```{=tex}
+\begingroup
+\fontsize{10pt}{10pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-app-1
+#| tbl-cap: "Pooled OLS estimations by gender"
+
+
+ols_women_1        <- lm(overall_swl  ~ retirement + birth_cohort + 
+                          education_hs + married + residence + self_health,
+                          data = working_df_women)
+
+ols_men_1          <- lm(overall_swl  ~ retirement + birth_cohort
+                          + education_hs + married + residence + self_health, 
+                          data = working_df_men)
+
+ols_women_2        <- lm(overall_swl  ~ retired_early + birth_cohort
+                          + education_hs + married + residence + self_health,
+                          data = working_df_women)
+
+ols_men_2          <- lm(overall_swl  ~ retired_early + birth_cohort
+                          + education_hs + married + residence + self_health, 
+                          data = working_df_men)
+
+
+output_1           <-  tbl_regression(ols_women_1, 
+                                    label = list(retirement ~ "Retirement",
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence", 
+                                     self_health ~ "Self-reported health status")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_2           <-  tbl_regression(ols_men_1, 
+                                    label = list(retirement ~ "Retirement",
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence", 
+                                    self_health ~ "Self-reported health status")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_3           <-  tbl_regression(ols_women_2, 
+                                    label = list(retired_early ~ "Early retirement",
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence", 
+                                    self_health ~ "Self-reported health status")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_4           <-  tbl_regression(ols_men_2, 
+                                    label = list(retired_early ~ "Early retirement",
+                                    birth_cohort ~ "Birth cohort",
+                                    education_hs ~ "Education level", 
+                                    married ~ "Marital status", 
+                                    residence ~ "Place of residence", 
+                                    self_health ~ "Self-reported health status")) %>%
+                          add_significance_stars(
+                          thresholds = c(0.01, 0.05, 0.1)
+                          ) %>%
+                          add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+
+#Formatting table
+tbl_merge(tbls = list(output_1, output_2, output_3, output_4),
+          tab_spanner = FALSE) %>%
+          modify_header(label="**Variable**", estimate_1="Women", 
+                        estimate_2="Men", estimate_3="Women", 
+                        estimate_4="Men") %>%
+          modify_table_body(~.x %>%
+                            dplyr::arrange(
+                              row_type == "glance_statistic", 
+                              match(var_label, c("Retirement", "Early retirement",
+                                    "Birth cohort", "Education level", 
+                                    "Marital status", "Place of residence", "Self-reported health status")))) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,std.error_4),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels()  %>%
+          as_gt()  %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2), 
+          label =  md("Employed vs. Retired"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_3, estimate_4), 
+          label =  md("Early vs. Regular"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, estimate_4), 
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "*p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left")) 
+
+```
+
+```{=tex}
+\endgroup
+```
+```{=tex}
+\begingroup
+\fontsize{8.25pt}{8.25pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-app-2
+#| tbl-cap: "Fixed-effects estimations controlling for health status"
+
+
+fe_1            <- plm(overall_swl  ~  retirement + self_health,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_2            <- plm(overall_swl  ~  retirement + self_health,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_3            <- plm(overall_swl  ~  retirement + self_health,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_4            <- plm(overall_swl  ~  retired_early + self_health,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_5            <- plm(overall_swl  ~  retired_early + self_health,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_6            <- plm(overall_swl  ~  retired_early + self_health,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_7            <- plm(overall_swl  ~  retired_categories
+                       + self_health,
+                           data=working_df, 
+                           index=c("pid","syear"),
+                           model="within", 
+                           effect="twoways")
+
+fe_8            <- plm(overall_swl  ~  retired_categories
+                       + self_health,
+                           data=working_df_women, 
+                           index=c("pid","syear"),
+                           model="within", 
+                           effect="twoways")
+
+fe_9            <- plm(overall_swl  ~  retired_categories
+                       + self_health,
+                           data=working_df_men, 
+                           index=c("pid","syear"),
+                           model="within", 
+                           effect="twoways")
+
+
+output_fe_1     <-  tbl_regression(fe_1, 
+                                    label = list(retirement ~ "Retirement", 
+                                                 self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_2     <-  tbl_regression(fe_2, 
+                                    label = list(retirement ~ "Retirement", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_3     <-  tbl_regression(fe_3, 
+                                    label = list(retirement ~ "Retirement", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_4     <-  tbl_regression(fe_4, 
+                                    label = list(retired_early ~ "Early retirement", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_5     <-  tbl_regression(fe_5, 
+                                    label = list(retired_early ~ "Early retirement", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_6     <-  tbl_regression(fe_6, 
+                                    label = list(retired_early ~ "Early retirement", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+
+output_fe_7     <-  tbl_regression(fe_7, 
+                                    label = list(retired_categories ~ "Time retired",
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_fe_8     <-  tbl_regression(fe_8, 
+                                    label = list(retired_categories ~ "Time retired", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_9     <-  tbl_regression(fe_9, 
+                                    label = list(retired_categories ~ "Time retired", 
+                                                  self_health ~ "Health status")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+#Formatting table
+
+tbl_merge(tbls = list(output_fe_1, output_fe_2, output_fe_3, 
+                      output_fe_4, output_fe_5, output_fe_6, 
+                      output_fe_7, output_fe_8, output_fe_9), 
+          tab_spanner = FALSE)%>%
+          modify_header(label="**Variable**",
+                        estimate_1="All",  estimate_2="Women", 
+                        estimate_3="Men",  estimate_4="All",
+                        estimate_5="Women", estimate_6="Men", 
+                        estimate_7="All",
+                        estimate_8="Women", estimate_9="Men") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic", 
+                             match(var_label, c("Retirement", "Early retirement",
+                                    "Time retired", "Health status")))) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4, std.error_5,std.error_6, 
+                     std.error_7, std.error_8,std.error_9),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3),
+          label =  md("Employed vs. Retired"),
+          gather = FALSE, 
+          level = 2)  %>%
+          gt::tab_spanner(
+          columns = c(estimate_4, estimate_5, estimate_6),
+          label =  md("Early vs. Regular"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_7, estimate_8, estimate_9),
+          label =  md("Long-term effects"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5, estimate_6, 
+                      estimate_7, estimate_8, estimate_9),
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "*p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left"))  %>%
+          rows_add(
+            label = "Individual FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )  %>%
+          rows_add(
+            label = "Age FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )
+ 
+
+
+```
+
+```{=tex}
+\endgroup
+```
+```{r, echo=F, warning=F}
+#| label: tbl-app-3
+#| tbl-cap: "Fuzzy RDD estimations by gender (default bandwidth)"
+
+
+rdd_women_1                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1  + Z1 + interaction_EZ1, 
+                                  data=working_df_rdd_women)
+
+rdd_women_2                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  education_hs + self_health + married +
+                                  residence | 
+                                  eligibleZ1   + Z1 + interaction_EZ1 +
+                                  education_hs + self_health + married +
+                                  residence, 
+                                  data=working_df_rdd_women)
+
+rdd_men_1                 <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1  + Z1 + interaction_EZ1, 
+                                  data=working_df_rdd_men)
+
+rdd_men_2                 <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  education_hs + self_health + married +
+                                  residence | 
+                                  eligibleZ1   + Z1 + interaction_EZ1 +
+                                  education_hs + self_health + married +
+                                  residence, 
+                                  data=working_df_rdd_men)
+
+
+output_rdd_1        <- tbl_regression(rdd_women_1, 
+                                    label = list(retired ~ "Retirement"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_2        <- tbl_regression(rdd_women_2, 
+                                    label = list(retired ~ "Retirement"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+
+output_rdd_3        <- tbl_regression(rdd_men_1, 
+                                    label = list(retired ~ "Retirement"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_4        <- tbl_regression(rdd_men_2, 
+                                    label = list(retired ~ "Retirement"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+#Formatting table
+
+tbl_merge(tbls = list(output_rdd_1, output_rdd_2, output_rdd_3,
+                      output_rdd_4), 
+          tab_spanner = FALSE)%>%
+          modify_header(label="**Variable**", estimate_1="(1)", 
+                        estimate_2="(2)", estimate_3="(1)",
+                        estimate_4="(2)") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2),
+          label =  md("Women"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_3, estimate_4),
+          label =  md("Men"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4),
+          label =  md("**Dep. variable: SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "Notes: 1/. Regression discontinuity estimates were constructed using linear regressions with different slopes. 2/. Fuzzy estimates represent the local average treatment effects for the subset of compliers (workers who reach the SRA and retire). 3/. Covariates include: education level, self-reported health status, marital status, and place of residence. 4/. All estimations consider the default bandwidth of 86 months to the left side of the cutoff and 67 months to the right side. 5/. The estimations utilize unbalanced panel data as cross-section. *p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left"))  %>%
+          rows_add(
+            label = "Covariates",
+            estimate_1 = "No", 
+            estimate_2 = "Yes", 
+            estimate_3 = "No",
+            estimate_4 = "Yes"
+          ) 
+
+
+```
+
+```{=tex}
+\begingroup
+\fontsize{8.25pt}{8.25pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-app-4
+#| tbl-cap: "Fixed-effects estimations, different sample selection"
+
+
+fe_1            <- plm(overall_swl  ~  retirement,
+                           data=working_df_fe_rob, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_2            <- plm(overall_swl  ~  retirement,
+                           data=working_df_fe_rob_w, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+
+fe_3            <- plm(overall_swl  ~  retirement,
+                           data=working_df_fe_rob_m, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_4            <- plm(overall_swl  ~  retired_early,
+                           data=working_df_fe_rob, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_5            <- plm(overall_swl  ~  retired_early,
+                           data=working_df_fe_rob_w, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_6            <- plm(overall_swl  ~  retired_early,
+                           data=working_df_fe_rob_m, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_7            <- plm(overall_swl  ~  retired_categories,
+                           data=working_df_fe_rob, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_8            <- plm(overall_swl  ~  retired_categories,
+                           data=working_df_fe_rob_w, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_9            <- plm(overall_swl  ~  retired_categories,
+                           data=working_df_fe_rob_m, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+
+
+output_fe_1     <-  tbl_regression(fe_1, 
+                                    label = list(retirement ~ "Retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_2     <-  tbl_regression(fe_2, 
+                                    label = list(retirement ~ "Retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_3     <-  tbl_regression(fe_3, 
+                                    label = list(retirement ~ "Retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_4     <-  tbl_regression(fe_4, 
+                                    label = list(retired_early ~ "Early retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_5     <-  tbl_regression(fe_5, 
+                                    label = list(retired_early ~ "Early retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_6     <-  tbl_regression(fe_6, 
+                                    label = list(retired_early ~ "Early retirement")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_7     <-  tbl_regression(fe_7, 
+                                    label = list(retired_categories ~ "Time retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_fe_8     <-  tbl_regression(fe_8, 
+                                    label = list(retired_categories ~ "Time retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_9     <-  tbl_regression(fe_9, 
+                                    label = list(retired_categories ~ "Time retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+#Formatting table
+
+tbl_merge(tbls = list(output_fe_1, output_fe_2, output_fe_3, 
+                      output_fe_4, output_fe_5, output_fe_6, 
+                      output_fe_7, output_fe_8, output_fe_9), 
+          tab_spanner = FALSE)%>%
+          modify_header(label="**Variable**",
+                        estimate_1="All",  estimate_2="Women", 
+                        estimate_3="Men",  estimate_4="All",
+                        estimate_5="Women", estimate_6="Men", 
+                        estimate_7="All", estimate_8="Women", 
+                        estimate_9="Men") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4, std.error_5,std.error_6,
+                     std.error_7, std.error_8,std.error_9),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3),
+          label =  md("Employed vs. Retired"),
+          gather = FALSE, 
+          level = 2)  %>%
+          gt::tab_spanner(
+          columns = c(estimate_4, estimate_5, estimate_6),
+          label =  md("Early vs. Regular"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_7, estimate_8, estimate_9),
+          label =  md("Long-term effects"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5, estimate_6, 
+                      estimate_7, estimate_8, estimate_9),
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "*p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left")) %>%
+          rows_add(
+            label = "Individual FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )  %>%
+          rows_add(
+            label = "Age FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )
+
+
+```
+
+```{=tex}
+\endgroup
+```
+```{=tex}
+\newpage
+\begingroup
+\fontsize{8.25pt}{8.25pt}\selectfont
+```
+```{r, echo=F}
+#| label: tbl-app-5
+#| tbl-cap: "Fixed-effects estimations controlling for lagged SWL"
+
+
+fe_1            <- plm(overall_swl  ~  retirement + overall_swl_lag,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_2            <- plm(overall_swl  ~  retirement  + overall_swl_lag,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+
+fe_3            <- plm(overall_swl  ~  retirement + overall_swl_lag,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_4            <- plm(overall_swl  ~  retired_early + overall_swl_lag,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_5            <- plm(overall_swl  ~  retired_early + overall_swl_lag,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_6            <- plm(overall_swl  ~  retired_early + overall_swl_lag,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_7            <- plm(overall_swl  ~  retired_categories + overall_swl_lag,
+                           data=working_df, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_8            <- plm(overall_swl  ~  retired_categories + overall_swl_lag,
+                           data=working_df_women, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+fe_9            <- plm(overall_swl  ~  retired_categories + overall_swl_lag,
+                           data=working_df_men, 
+                           index=c("pid","age_years"),
+                           model="within", 
+                           effect="twoways")
+
+
+
+output_fe_1     <-  tbl_regression(fe_1, 
+                                    label = list(retirement ~ "Retirement", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_2     <-  tbl_regression(fe_2, 
+                                    label = list(retirement ~ "Retirement", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_3     <-  tbl_regression(fe_3, 
+                                    label = list(retirement ~ "Retirement", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_4     <-  tbl_regression(fe_4, 
+                                    label = list(retired_early ~ "Early retirement", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_5     <-  tbl_regression(fe_5, 
+                                    label = list(retired_early ~ "Early retirement", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_6     <-  tbl_regression(fe_6, 
+                                    label = list(retired_early ~ "Early retirement", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+
+output_fe_7     <-  tbl_regression(fe_7, 
+                                    label = list(retired_categories ~ "Time retired", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_fe_8     <-  tbl_regression(fe_8, 
+                                    label = list(retired_categories ~ "Time retired", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+output_fe_9     <-  tbl_regression(fe_9, 
+                                    label = list(retired_categories ~ "Time retired", 
+                                                 overall_swl_lag ~ "Overall SWL (lag)")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs)) 
+
+#Formatting table
+
+tbl_merge(tbls = list(output_fe_1, output_fe_2, output_fe_3, 
+                      output_fe_4, output_fe_5, output_fe_6, 
+                      output_fe_7, output_fe_8, output_fe_9), 
+          tab_spanner = FALSE)%>%
+          modify_header(label="**Variable**",
+                        estimate_1="All",  estimate_2="Women", 
+                        estimate_3="Men",  estimate_4="All",
+                        estimate_5="Women", estimate_6="Men", 
+                        estimate_7="All", estimate_8="Women", 
+                        estimate_9="Men") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic", 
+                          match(var_label, c("Retirement", "Early retirement",
+                                    "Time retired", "Overall SWL (lag)")))) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2,std.error_3,
+                     std.error_4, std.error_5,std.error_6,
+                     std.error_7, std.error_8,std.error_9),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3),
+          label =  md("Employed vs. Retired"),
+          gather = FALSE, 
+          level = 2)  %>%
+          gt::tab_spanner(
+          columns = c(estimate_4, estimate_5, estimate_6),
+          label =  md("Early vs. Regular"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_7, estimate_8, estimate_9),
+          label =  md("Long-term effects"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5, estimate_6, 
+                      estimate_7, estimate_8, estimate_9),
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "*p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left")) %>%
+          rows_add(
+            label = "Individual FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )  %>%
+          rows_add(
+            label = "Age FE",
+            estimate_1 = "Yes", 
+            estimate_2 = "Yes", 
+            estimate_3 = "Yes",
+            estimate_4 = "Yes", 
+            estimate_5 = "Yes",
+            estimate_6 = "Yes",
+            estimate_7 = "Yes", 
+            estimate_8 = "Yes",
+            estimate_9 = "Yes",
+          )
+
+
+```
+
+```{=tex}
+\endgroup
+```
+```{r, echo=F}
+#| label: tbl-app-6
+#| tbl-cap: "Fuzzy RDD estimations (different bandwidths)"
+
+
+rdd_1                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1 + Z1 + interaction_EZ1, 
+                                  data=working_df_b1)
+
+rdd_2                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  gender  + education_hs + 
+                                  self_health + married + residence  | 
+                                  eligibleZ1   + Z1 + interaction_EZ1 +
+                                  gender  + education_hs + 
+                                  self_health + married + residence, 
+                                  data=working_df_b1)
+
+rdd_3                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1 + Z1 + interaction_EZ1, 
+                                  data=working_df_b2)
+
+rdd_4                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  gender + education_hs + 
+                                  self_health + married + residence | 
+                                  eligibleZ1 + Z1 + interaction_EZ1 +
+                                  gender + education_hs + 
+                                  self_health + married + residence, 
+                                  data=working_df_b2)
+
+rdd_5                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1   + Z1 + interaction_EZ1, 
+                                  data=working_df_b3)
+
+rdd_6                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  gender + education_hs + 
+                                  self_health + married + residence | 
+                                  eligibleZ1 + Z1 + interaction_EZ1 +
+                                  gender + education_hs + 
+                                  self_health + married + residence, 
+                                  data=working_df_b3)
+
+
+rdd_7                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 | 
+                                  eligibleZ1   + Z1 + interaction_EZ1, 
+                                  data=working_df_b4)
+
+rdd_8                <- iv_robust(overall_swl ~ 
+                                  retired + Z1 + interaction_EZ1 +
+                                  gender + education_hs + 
+                                  self_health + married + residence | 
+                                  eligibleZ1 + Z1 + interaction_EZ1 +
+                                  gender + education_hs + 
+                                  self_health + married + residence, 
+                                  data=working_df_b4)
+
+
+
+output_rdd_1        <- tbl_regression(rdd_1, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_2        <- tbl_regression(rdd_2, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_3        <- tbl_regression(rdd_3, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+
+output_rdd_4        <- tbl_regression(rdd_4, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_5        <- tbl_regression(rdd_5, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+
+output_rdd_6        <- tbl_regression(rdd_6, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+
+output_rdd_7        <- tbl_regression(rdd_7, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+output_rdd_8        <- tbl_regression(rdd_8, 
+                                    label = list(retired ~ "Retired"), 
+                                    include = c("retired")) %>%
+                        add_significance_stars(
+                         thresholds = c(0.01, 0.05, 0.1)
+                        ) %>%
+                        add_glance_table(label = list (nobs ~ "Observations"),
+                          include = c(nobs))
+
+#Formatting table
+
+tbl_merge(tbls = list(output_rdd_1, output_rdd_2, output_rdd_3,
+                      output_rdd_4, output_rdd_5, output_rdd_6, 
+                      output_rdd_7, output_rdd_8), 
+          tab_spanner = FALSE) %>%
+          modify_header(label="**Variable**", estimate_1="(1)", 
+                        estimate_2="(2)", 
+                        estimate_3="(1)", estimate_4 ="(2)", 
+                        estimate_5="(1)", estimate_6="(2)", 
+                        estimate_7="(1)", estimate_8="(2)") %>%
+          modify_table_body(~.x %>% dplyr::arrange(row_type == "glance_statistic")) %>% 
+          modify_table_styling(
+          column = c(std.error_1, std.error_2, std.error_3,
+                     std.error_4, std.error_5, std.error_6, 
+                     std.error_7, std.error_8),
+          hide = TRUE) %>%
+          modify_footnote(everything() ~ NA) %>%
+          bold_labels() %>%
+          as_gt() %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2),
+          label =  md("+/-60 months"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_3, estimate_4),
+          label =  md("+/-48 months"),
+          gather = FALSE, 
+          level = 2)  %>%
+          gt::tab_spanner(
+          columns = c(estimate_5, estimate_6),
+          label =  md("+/-36 months"),
+          gather = FALSE, 
+          level = 2)  %>%
+          gt::tab_spanner(
+          columns = c(estimate_7, estimate_8),
+          label =  md("+/-24 months"),
+          gather = FALSE, 
+          level = 2) %>%
+          gt::tab_spanner(
+          columns = c(estimate_1, estimate_2, estimate_3, 
+                      estimate_4, estimate_5, estimate_6, 
+                      estimate_7, estimate_8),
+          label =  md("**Dependent variable: Overall SWL (0-10)**"),
+          gather = FALSE, 
+          level = 3) %>%
+          tab_footnote(
+          footnote = "Notes: 1/. Regression discontinuity estimates were constructed using linear regressions with different slopes. 2/. Fuzzy estimates represent the local average treatment effects for the subset of compliers (workers who reach the SRA and retire). 3/. Covariates include: gender, education level, self-reported health status, marital status, and place of residence. 4/. The estimations utilize unbalanced panel data as cross-section. *p<0.1; **p<0.05; ***p<0.01",
+          placement = c("left"))  %>%
+          rows_add(
+            label = "Covariates",
+            estimate_1 = "No", 
+            estimate_2 = "Yes", 
+            estimate_3 = "No",
+            estimate_4 = "Yes", 
+            estimate_5 = "No",
+            estimate_6 = "Yes",
+            estimate_7 = "No", 
+            estimate_8 = "Yes"
+          ) 
+
+```
+\newpage
+
+```{r, echo=F, message=F, warning=F}
+#| label: tbl-app-7
+#| tbl-cap: "Non-parametric Fuzzy RDD estimations (default bandwidth)"
+
+
+# functions to render rdrobust output in modelsummary
+
+tidy.rdrobust <- function(model, ...) {
+  ret <- data.frame(
+    term = row.names(model$coef),
+    estimate = model$coef[, 1],
+    std.error = model$se[, 1],
+    p.value = model$pv[, 1],
+    conf.low = model$ci[, 1],
+    conf.high = model$ci[, 2]
+   )
+  row.names(ret) <- NULL
+  ret
+}
+
+glance.rdrobust <- function(model, ...) {
+  ret <- data.frame(
+    Kernel = model$kernel,
+    Bandwidth = model$bwselect, 
+    Observations = model$N[[1]] + model$N[[2]] 
+  )
+  ret
+}
+
+
+rdrobust_all    <- rdrobust(y = working_df_rdd$overall_swl,
+                            x = working_df_rdd$Z1,
+                c = 0, fuzzy = working_df_rdd$retired)
+
+
+rdrobust_women  <- rdrobust(y = working_df_rdd_women$overall_swl,
+                            x = working_df_rdd_women$Z1,
+                c = 0, fuzzy = working_df_rdd_women$retired) 
+
+rdrobust_men    <- rdrobust(y = working_df_rdd_men$overall_swl,
+                            x = working_df_rdd_men$Z1,
+                c = 0, fuzzy = working_df_rdd_men$retired)  
+
+
+modelsummary(list("All"=rdrobust_all, 
+                  "Women"=rdrobust_women, 
+                  "Men"=rdrobust_men), 
+             stars = c('*' = .1, '**' = .05, '***' = .01), 
+             fmt=2, 
+             output="gt") %>%
+          gt::tab_spanner(
+          columns = c("All", "Women", "Men"),
+          label =  md("**Dependent variable: SWL (0-10)**"),
+          gather = FALSE, 
+          level = 2) %>%
+          tab_footnote(
+          footnote = "Notes: 1/. Regression discontinuity estimates were constructed using non-parametric fuzzy specifications. 2/. Fuzzy estimates represent the local average treatment effects for the subset of compliers (workers who reach the SRA and retire). 3/. All estimations consider the default bandwidth of 86 months to the left side of the cutoff and 67 months to the right side. 4/. The estimations utilize unbalanced panel data as cross-section.",
+          placement = c("left")) 
+
+```
+
+```{r, echo=F, include=F}
+#Density test 
+test_density         <- rddensity(X = working_df_rdd$Z1,
+                        c=0, 
+                        vce="jackknife")
+
+#Extracting the desired results from the density test
+method               <- c("Robust")
+t_stat               <- c(test_density$test$t_jk)
+p_values             <- c(test_density$test$p_jk)
+
+density_test_df      <- data.frame(method = method, t_stat= t_stat, p_values = p_values)
+
+
+density_test_plot    <- rdplotdensity(rdd = test_density,
+                        plotRange = c(-60,60),
+                        X =  working_df_rdd$Z1, 
+                        histFillCol = "black", 
+                        ylabel = "Proportion of observations", 
+                        xlabel = "Age minus SRA (in months)")
+
+```
+
+```{r, echo=F, results='hide'}
+#| label: fig-app-1
+#| fig-cap: "McCrary density test plot and result"
+
+density_test_plot
+
+```
+
+```{r, echo=F}
+
+density_test_df %>%
+  kable(align = rep('c', 3), col.names = NULL, 
+        booktabs=T) %>%
+  kableExtra::kable_styling(position = 'center',latex_options = 'HOLD_position') %>%
+  add_header_above(c("Method", "T-statistic", "P-value"))
+
+```
+
+\newpage
+
+## Replication code {.unlisted .unnumbered}
+
+This paper was written using Quarto v1.4.553. The working dataset and the variables were constructed using Stata 17. All the code necessary to replicate the database construction, figures and tables can be found in the following [Github repository](https://github.com/williamfernandezt/MA-Hertie-School).
+
+Due to the SOEP-RV including administrative pension records, the working dataset cannot be made publicly available.
